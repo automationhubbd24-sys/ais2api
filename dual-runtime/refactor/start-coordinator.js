@@ -87,14 +87,13 @@ async function main(){
    }:undefined
   }])),
   accounts:dispatch.pool.ids.filter(id=>dispatch.accountFlags[id]?.status!=='deleted').map(id=>{
-   let name='N/A (未命名)';
-   try{const d=JSON.parse(fs.readFileSync('/opt/ais2api/auth/auth-'+id+'.json','utf8'));if(typeof d.accountName==='string'&&d.accountName)name=d.accountName;}catch{}
+   const names=tiers.names(id),name=names.alias||names.accountName||'N/A (未命名)';
    const owner=dispatch.pool.owners.get(id);
    const cooldownUntil=dispatch.pool.cooldowns.get(id)||0;
    const flag=dispatch.accountFlags[id];
    return {cookie:cookieStatus(id,owner,flag),authStatus:flag?.status||'unknown',invalidReason:flag?.reason,
     invalidAt:flag?.at,canDelete:!!flag&&flag.status!=='deleted'&&!accountOccupied(id),
-    id,name,tier:tiers.tier(id),owner:owner||null,cooldownUntil,quota:dispatch.quotas.summary(id,policyStore.policies)};
+    id,name,alias:names.alias,accountName:names.accountName,tier:tiers.tier(id),owner:owner||null,cooldownUntil,quota:dispatch.quotas.summary(id,policyStore.policies)};
   })
  });
  const {ProxySettings}=require('./proxy-settings');
@@ -118,6 +117,8 @@ async function main(){
   runMode:()=>browserLease.modeStatus(),
   ultraMode:()=>tiers.status(dispatch.pool.ids),
   setUltraMode:body=>{const r=tiers.setMode(body);monitor.tick();return tiers.status(dispatch.pool.ids);},
+  setAccountName:body=>{const id=Number(body?.id);if(!dispatch.pool.ids.includes(id))throw Object.assign(Error('账号 '+body?.id+' 不在账号池'),{statusCode:404});
+   return tiers.setAlias(id,body?.name);},
   setAccountTier:body=>{const id=Number(body?.id);if(!dispatch.pool.ids.includes(id))throw Object.assign(Error('账号 '+body?.id+' 不在账号池'),{statusCode:404});
    const r=tiers.setTier(id,body?.tier);monitor.tick();return r;},
   setRunMode:body=>browserLease.setMode(body),

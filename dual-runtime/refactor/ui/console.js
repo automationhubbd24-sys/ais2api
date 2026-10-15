@@ -134,6 +134,10 @@ function renderAccountRows(d=state){
   row.append(cookieCell(a));
   const cooldown=el('td',a.cooldownUntil>Date.now()?date(a.cooldownUntil):'—','cooldown-cell');row.append(cooldown);
   const actions=el('td'),details=el('button',undefined,'account-detail-button');details.type='button';details.title='查看账号详情';details.setAttribute('aria-label','查看账号 '+a.id+' 的额度详情');details.append(consoleIcon('chart'));details.addEventListener('click',()=>openAccount(a.id));actions.append(details);
+  {const rn=el('button','改名');rn.type='button';rn.title='修改账号名称';rn.addEventListener('click',async()=>{
+   const value=prompt('账号 #'+a.id+' 的名称（最多 40 字，留空恢复默认）',a.alias||'');if(value===null)return;
+   rn.disabled=true;try{const r=await api('/api/accounts/name',{id:a.id,name:value});notice('账号 #'+a.id+' 名称'+(r.alias?'已改为：'+r.alias:'已恢复默认'));await refresh();}
+   catch(e){notice('修改名称失败：'+e.message);rn.disabled=false;}});actions.append(rn);}
   if(['invalid','deleting'].includes(a.authStatus)){
    const remove=el('button','删除');remove.type='button';remove.disabled=!a.canDelete||mutating||!fresh;
    remove.title=a.canDelete?'删除认证文件':'占用中';

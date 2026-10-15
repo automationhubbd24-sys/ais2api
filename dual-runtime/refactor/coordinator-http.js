@@ -130,6 +130,10 @@ function createServer({keys,models,scheduler,status,actions}){
     }
    }
    if(req.method==='GET'&&url.pathname==='/internal/usage-counts')return json(res,200,actions.usageCounts());
+   if(req.method==='POST'&&url.pathname==='/internal/accounts/name'){
+    try{return json(res,200,actions.setAccountName(await readBody()));}
+    catch(e){const code=[400,404,409].includes(e.statusCode)?e.statusCode:503;return json(res,code,{error:code===503?'保存未确认':e.message});}
+   }
    if(url.pathname==='/internal/ultra-mode'||url.pathname==='/internal/accounts/tier'){
     if(req.method==='GET'&&url.pathname==='/internal/ultra-mode')return json(res,200,actions.ultraMode());
     if(req.method==='POST'){

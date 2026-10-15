@@ -21,6 +21,15 @@
    const data=await response.json();if(!response.ok)throw Error(typeof data.error==='string'?data.error:'接口不可用');return data;
   }catch(e){if(timedOut)throw Error('接口 15 秒未响应，请稍后重试');throw e;}finally{clearTimeout(timer);}
  }
+ async function renameAccount(a,button){
+  const value=prompt('账号 #'+a.id+' 的名称（最多 40 字，留空恢复默认）',a.alias||'');
+  if(value===null)return;button.disabled=true;
+  try{const r=await fetch('/api/accounts/name',{method:'POST',credentials:'same-origin',redirect:'error',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({id:a.id,name:value})});
+   const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||'保存失败');
+   a.alias=d.alias;a.name=d.alias||a.accountName||'N/A (未命名)';renameRefresh();
+  }catch(e){alert('修改名称失败：'+e.message);button.disabled=false;}
+ }
+ function renameRefresh(){renderAccountDetail();document.dispatchEvent(new Event('ais-refresh'));}
  async function setTier(id,tier,button){
   if(tier==='ultra'&&!confirm('将账号 #'+id+' 标记为 Ultra？\n开启 Ultra 专用实例后，它只会分配到专用实例。'))return;
   button.disabled=true;
@@ -130,7 +139,7 @@
   const box=byId('quota-accounts'),a=accountData.find(item=>String(item.id)===String(selectedAccount));box.replaceChildren();
   if(!a){box.append(node('div','该账号已不在当前账号池中。','card empty'));return;}
   byId('account-dialog-title').textContent=a.name||'未命名账号';byId('account-dialog-subtitle').textContent='账号 #'+a.id+' · '+(a.owner?'实例 '+a.owner:a.cooldownUntil>Date.now()?'冷却中':'未分配');
-  const overview=node('div',undefined,'account-detail-overview'),title=node('h3','状态与额度'),fields=node('div',undefined,'account-detail-fields');overview.append(title);pair(fields,'当前实例',a.owner||'未分配');pair(fields,'账号状态',a.cooldownUntil>Date.now()?'冷却中':a.owner?'已分配':'备用');pair(fields,'账号分类',a.tier==='ultra'?'Ultra':'普通');overview.append(fields);{const t=node('button',a.tier==='ultra'?'改为普通账号':'标记为 Ultra 账号');t.type='button';t.addEventListener('click',()=>setTier(a.id,a.tier==='ultra'?'standard':'ultra',t));overview.append(t);}box.append(overview);
+  const overview=node('div',undefined,'account-detail-overview'),title=node('h3','状态与额度'),fields=node('div',undefined,'account-detail-fields');overview.append(title);pair(fields,'当前实例',a.owner||'未分配');pair(fields,'账号状态',a.cooldownUntil>Date.now()?'冷却中':a.owner?'已分配':'备用');pair(fields,'账号分类',a.tier==='ultra'?'Ultra':'普通');if(a.accountName&&a.accountName!==a.name)pair(fields,'登录邮箱',a.accountName);overview.append(fields);{const n=node('button','修改名称');n.type='button';n.addEventListener('click',()=>renameAccount(a,n));overview.append(n);}{const t=node('button',a.tier==='ultra'?'改为普通账号':'标记为 Ultra 账号');t.type='button';t.addEventListener('click',()=>setTier(a.id,a.tier==='ultra'?'standard':'ultra',t));overview.append(t);}box.append(overview);
   if(a.cooldownUntil>Date.now())box.append(node('div','账号冷却至 '+time(a.cooldownUntil),'note warn'));
   if(!a.quota){box.append(node('div','额度信息不可用','note warn'));return;}
   const models=Object.values(a.quota.models||{});if(!models.length){box.append(node('div','尚未配置模型额度策略','empty'));return;}

@@ -48,3 +48,13 @@ test('request counts per Beijing day, 7 and 30 days with 429',async()=>{
  a.deepEqual([c.today.requests,c.week.requests,c.month.requests],[2,4,5]);
  a.equal(c.today.rateLimited,1);a.equal(c.today.success,1);a.ok(c.last429At>0);
 });
+test('account alias is stored separately from login email and can be cleared',()=>{
+ const {dir,tiers}=setup();
+ a.deepEqual(tiers.setAlias(2,'  Ultra 主号 '),{id:2,alias:'Ultra 主号'});
+ const d=JSON.parse(fs.readFileSync(path.join(dir,'auth-2.json')));a.equal(d.displayName,'Ultra 主号');a.equal(d.accountName,'a2');a.equal(d.cookies.length,1);
+ a.deepEqual(tiers.names(2),{alias:'Ultra 主号',accountName:'a2'});
+ tiers.setTier(2,'ultra');a.equal(tiers.names(2).alias,'Ultra 主号');
+ a.throws(()=>tiers.setAlias(2,'x'.repeat(41)),/40/);
+ tiers.setAlias(2,'');a.equal('displayName' in JSON.parse(fs.readFileSync(path.join(dir,'auth-2.json'))),false);
+ a.equal((fs.statSync(path.join(dir,'auth-2.json')).mode&0o777),0o600);
+});
