@@ -234,7 +234,7 @@ async function main(){
  await new Promise((resolve,reject)=>{
   server.once('error',reject);server.listen(8890,'127.0.0.1',resolve);
  });
- const authTimer=setInterval(()=>{authMaintenance.tick();keepalive.tick();},60000);authTimer.unref();
+ const authTimer=setInterval(()=>{actions.syncAccounts().then(r=>{if(r.added?.length)console.log('[Accounts] synced',r.added.join(','));}).catch(()=>{});authMaintenance.tick();keepalive.tick();},60000);authTimer.unref();
  const timer=setInterval(()=>monitor.tick(),2000);
  const modeTimer=setInterval(()=>browserLease.tick(),5000);modeTimer.unref();
  const cleanupTimer=setInterval(()=>cleanup.tick(),60000);cleanupTimer.unref();
