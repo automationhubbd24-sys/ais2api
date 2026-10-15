@@ -221,14 +221,32 @@ async function main(){
    const files=fs.readdirSync('/opt/ais2api/auth').filter(n=>/^auth-[1-9]\d*\.json$/.test(n)).map(n=>Number(n.match(/\d+/)[0])).filter(Number.isSafeInteger).sort((a,b)=>a-b);
    const added=[];
    for(const id of files){
+    // Importers number new files max+1, so a deleted ID can come back as a different account.
+    // A file written after the deletion is a new account: drop the old account's flag and history.
+    const flag=dispatch.accountFlags[id];
+    if(flag?.status==='deleted'&&!accountOccupied(id)){
+     let mtime=0;try{mtime=fs.statSync(path.join('/opt/ais2api/auth','auth-'+id+'.json')).mtimeMs;}catch{}
+     if(mtime>(flag.deletedAt||flag.at||0)){
+      delete dispatch.accountFlags[id];dispatch.pool.cooldowns.delete(id);
+      if(dispatch.authSaves)delete dispatch.authSaves[id];
+      added.push(id);console.log('[Accounts] reused ID',id,'treated as a new account');
+     }
+    }
     if(dispatch.pool.ids.includes(id))continue;
     dispatch.quotas.account(id,true);
     dispatch.pool.ids.push(id);
     dispatch.pool.ids.sort((a,b)=>a-b);
     added.push(id);
    }
-   if(added.length)dispatch.checkpoint();
-   return {added,pool:dispatch.pool.ids};
+   // Auth file removed outside the admin page: retire it like a normal delete (history kept).
+   const removed=[];
+   for(const id of dispatch.pool.ids){
+    if(files.includes(id)||dispatch.accountFlags[id]?.status==='deleted'||accountOccupied(id))continue;
+    dispatch.accountFlags[id]={status:'deleted',reason:'login_required',at:Date.now(),deletedAt:Date.now()};removed.push(id);
+   }
+   if(removed.length)console.log('[Accounts] auth file missing, marked deleted',removed.join(','));
+   if(added.length||removed.length)dispatch.checkpoint();
+   return {added,removed,pool:dispatch.pool.ids};
   }
  };
  const server=createServer({keys:cfg.apiKeys,models:()=>routing.list(),scheduler,status,actions});

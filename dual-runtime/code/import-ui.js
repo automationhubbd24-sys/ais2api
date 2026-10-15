@@ -37,6 +37,13 @@ module.exports = function(app, system) {
       });
       const dir=path.join(__dirname,"auth");
       const nums=fs.readdirSync(dir).filter(n=>/^auth-\d+\.json$/.test(n)).map(n=>Number(n.match(/\d+/)[0]));
+      // Same Google session already imported? Compare session cookies, never echo their values.
+      const sess=list=>{const m=new Map();for(const c of list)if(["SID","__Secure-1PSID","__Secure-3PSID"].includes(c.name)&&c.value)m.set(c.name,c.value);return m;};
+      const mine=sess(cookies);
+      if(mine.size)for(const n of nums){
+        try{const other=sess(JSON.parse(fs.readFileSync(path.join(dir,"auth-"+n+".json"),"utf8")).cookies||[]);
+          if([...mine].some(([k,v])=>other.get(k)===v))return res.status(409).json({error:"这个账号已经导入过（账号 #"+n+"），没有重复添加",duplicate:n});}catch{}
+      }
       if(nums.length>=50) return res.status(409).json({error:"账号数量已达上限"});
       const index=Math.max(0,...nums)+1;
       const tier=req.get("X-Account-Tier")==="ultra"?"ultra":"standard";
