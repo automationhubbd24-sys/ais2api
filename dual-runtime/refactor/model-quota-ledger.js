@@ -1,6 +1,6 @@
  'use strict';
 const WINDOW=86400000;
-const LIMITS=Object.freeze({flash:100,pro:10});
+const LIMITS=Object.freeze({flash:100,pro:10,ultra:null});
 const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
 const object=o=>Boolean(o)&&typeof o==='object'&&!Array.isArray(o);
 const integer=n=>Number.isSafeInteger(n)&&n>=0;
@@ -9,7 +9,7 @@ function modelKey(id){
  if(typeof id!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(id))throw Error('Canonical model ID required');
  return id;
 }
-function familyKey(f){if(!own(LIMITS,f))throw Error('Explicit flash/pro family required');return f;}
+function familyKey(f){if(!own(LIMITS,f))throw Error('Explicit flash/pro/ultra family required');return f;}
 function validate(raw){
  if(!object(raw)||raw.version!==1||!object(raw.accounts)||Object.keys(raw).some(k=>!['version','accounts'].includes(k)))throw Error('Invalid model quota ledger');
  if(Object.keys(raw.accounts).length>10000)throw Error('Too many quota accounts');
@@ -34,7 +34,8 @@ function validate(raw){
  return structuredClone(raw);
 }
 class ModelQuotaLedger{
- constructor(raw={version:1,accounts:{}},clock=Date.now){this.data=validate(raw);this.clock=clock;}
+ constructor(raw={version:1,accounts:{}},clock=Date.now){this.data=validate(raw);this.clock=clock;this.unlimited=()=>false;}
+ limitFor(id,family){return this.unlimited(id)?null:LIMITS[family];}
  account(id,create=false){
   const key=accountKey(id);
   if(!own(this.data.accounts,key)&&create)this.data.accounts[key]={windowStart:0,models:{},legacy:null};
@@ -46,11 +47,11 @@ class ModelQuotaLedger{
   const a=this.account(id),q=a&&own(a.models,model)?a.models[model]:undefined;
   const active=this.windowActive(a,now),used=active?(q?.used||0):0;
   const legacyBlocked=!!a?.legacy&&now<a.legacy.until&&a.legacy.blockedFamilies.includes(family);
-  const cooldownUntil=q?.cooldownUntil||0;
-  return {model,family,limit:LIMITS[family],used,remaining:Math.max(0,LIMITS[family]-used),
+  const cooldownUntil=q?.cooldownUntil||0,limit=this.limitFor(id,family);
+  return {model,family,limit,unlimited:limit===null,used,remaining:limit===null?null:Math.max(0,limit-used),
    windowStart:active?a.windowStart:0,windowEnd:active?a.windowStart+WINDOW:0,
    cooldownUntil,legacyBlocked,legacyUntil:legacyBlocked?a.legacy.until:0,
-   allowed:!legacyBlocked&&cooldownUntil<=now&&used<LIMITS[family]};
+   allowed:!legacyBlocked&&cooldownUntil<=now&&(limit===null||used<limit)};
  }
  charge(id,model,family){
   const now=this.clock(),v=this.view(id,model,family,now);

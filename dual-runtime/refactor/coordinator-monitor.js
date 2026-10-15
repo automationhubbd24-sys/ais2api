@@ -56,6 +56,11 @@ class CoordinatorMonitor {
     d.checkpoint();
     if (d.operations.has(slot)) return;
 
+    // Ultra allocation: a slot holding the wrong account class is switched when idle.
+    if (d.slotAllows && !d.slotAllows(slot, account) && d.rotationIdle?.(slot) && !this.tierWait?.has(slot)) {
+      const candidate=this.rotation.preflight(slot);
+      if(candidate.available){ this.rotation.rotate(slot,true,candidate.target).catch(()=>{}); return; }
+    }
     // Account-wide cooling can invalidate the catalog; retire only a proven idle worker.
     if (probe.cooldownUntil > Date.now() && d.rotationIdle?.(slot)) {
       const candidate=this.rotation.preflight(slot);

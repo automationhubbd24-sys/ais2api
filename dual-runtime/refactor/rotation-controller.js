@@ -49,7 +49,7 @@ class RotationController {
      this.running.has(slot)||this.dispatch.operations.has(slot)||this.failures.has(slot))
    return {available:false,reason:'Slot not safe to rotate'};
   try{
-   const candidate=this.dispatch.rotationCandidate(target,plan);
+   const candidate=this.dispatch.rotationCandidate(target,plan,slot);
    if(candidate===undefined)return {available:false,reason:'No available spare account'};
    try{this.driver.validateAccount?.(candidate);}
    catch{return {available:false,reason:'Target account credentials unavailable'};}
@@ -73,7 +73,7 @@ class RotationController {
     this.dispatch.update(slot,probe);
     if(!this.dispatch.rotationIdle(slot))throw Error('Worker still busy or status unconfirmed');
    }
-   const candidate=this.dispatch.rotationCandidate(target,plan);
+   const candidate=this.dispatch.rotationCandidate(target,plan,slot);
    if(candidate===undefined)return {waiting:true};
    // A bounded local read happens before reserving or stopping anything. Bad
    // credentials are account-local and must not strand a healthy worker.
@@ -113,10 +113,10 @@ class RotationController {
   d.checkpoint();
   this.releaseGate(slot,ticket.token);
   if(this.gate(slot))return false;
-  let next=d.rotationCandidate();
+  let next=d.rotationCandidate(undefined,undefined,slot);
   while(next!==undefined){
    try{this.driver.validateAccount(next);break;}
-   catch{d.pool.cooldown(next,Date.now()+300000);d.checkpoint();next=d.rotationCandidate();}
+   catch{d.pool.cooldown(next,Date.now()+300000);d.checkpoint();next=d.rotationCandidate(undefined,undefined,slot);}
   }
   if(next===undefined)throw Error('No available account; failed login target excluded');
   const nextToken=d.pool.sequence+1;
@@ -253,15 +253,16 @@ class RotationController {
   if(op)throw Error('该实例正在执行：'+({auth:'保存登录态',catalog:'模型同步',recovery:'自动恢复',cleanup:'资源清理',proxy:'代理配置应用',login:'登录占用（实例已暂停）',rotation:'账号轮换'}[op.kind]||op.kind));
   if(d.slots.get(slot).proxyApply)throw Error('代理配置应用未完成，请在代理页重试或恢复原容器');
  }
- pick(target){
+ pick(target,slot){
   const d=this.dispatch;
   if(target!==undefined){
    if(!d.pool.ids.includes(target))throw Error('账号 '+target+' 不存在');
    if(d.accountFlags[target])throw Error('账号 '+target+' 已标记失效，需要重新登录');
    const o=d.pool.owners.get(target);if(o)throw Error('账号 '+target+' 正被实例 '+o+' 使用');
+   if(!d.slotAllows(slot,target))throw Error(d.slotRule?.(slot)||'该账号分类不能分配到实例 '+slot);
   }else{
-   target=d.rotationCandidate();
-   if(target===undefined)throw Error('没有可用备用账号：其余账号都在使用、冷却或已失效');
+   target=d.rotationCandidate(undefined,undefined,slot);
+   if(target===undefined)throw Error('没有可用备用账号：'+(d.slotRule?.(slot)?d.slotRule(slot)+'，':'')+'其余账号都在使用、冷却或已失效');
   }
   try{this.driver.validateAccount(target);}catch{throw Error('账号 '+target+' 的登录文件不可用');}
   return target;
@@ -306,7 +307,7 @@ class RotationController {
   const d=this.dispatch;
   if(d.pool.slots.get(slot)?.pending)return this.forceResume(slot);
   this.manualCheck(slot);
-  const candidate=this.pick(target);
+  const candidate=this.pick(target,slot);
   const lease=d.operations.acquire(slot,'rotation');
   if(!lease)throw Error('该实例正在执行其他操作');
   this.failures.delete(slot);d.slots.get(slot).ready=false;

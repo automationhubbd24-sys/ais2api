@@ -31,13 +31,13 @@ function cleanStorage(storage){
   .map(o=>({origin:o.origin,localStorage:(o.localStorage||[]).filter(v=>v&&typeof v.name==='string'&&typeof v.value==='string'&&v.name.length<=1024&&v.value.length<=65536).slice(0,200).map(v=>({name:v.name,value:v.value}))}));
  return {cookies,origins};
 }
-function writeAccount(storage,email){
+function writeAccount(storage,email,tier){
  const {cookies,origins}=cleanStorage(storage);
  if(cookies.filter(c=>/^(SID|__Secure-1PSID|__Secure-3PSID|SAPISID|HSID|SSID)$/.test(c.name)).length<3)throw Error('登录状态不完整');
  const names=fs.readdirSync(AUTH).filter(n=>/^auth-\d+\.json$/.test(n));
  if(names.length>=50)throw Error('账号数量已达上限');
  const index=Math.max(0,...names.map(n=>Number(n.match(/\d+/)[0])))+1;
- const content=JSON.stringify({cookies,origins,accountName:email});
+ const content=JSON.stringify({cookies,origins,accountName:email,...(tier==='ultra'?{accountTier:'ultra'}:{})});
  if(Buffer.byteLength(content)>262144)throw Error('登录数据过大');
  const file=path.join(AUTH,'auth-'+index+'.json');
  const fd=fs.openSync(file,'wx',0o600);
@@ -83,7 +83,7 @@ function alreadyImported(email){
 }
 function startJob(email,password,opts={}){
  const id=crypto.randomUUID(),name='ais-login-'+id.slice(0,8);
- const job={id,name,email,target:opts.target||null,auto:!!opts.auto,status:'running',step:'starting',need:null,message:'',account:null,created:Date.now(),updated:Date.now()};
+ const job={id,name,email,tier:opts.tier==='ultra'?'ultra':'standard',target:opts.target||null,auto:!!opts.auto,status:'running',step:'starting',need:null,message:'',account:null,created:Date.now(),updated:Date.now()};
  jobs.set(id,job);
  (async()=>{
  try{job.step='pausing_worker';await leaseAcquire('login:'+id.slice(0,8));job.leased=true;}
@@ -115,7 +115,7 @@ function startJob(email,password,opts={}){
      if(job.target){refreshAccount(job.target,m.storage);job.account=job.target;m.storage=null;
       const r=await coord('POST','/internal/accounts/revalidate',{id:job.target});
       job.status='done';job.message=r.status===200?'已重新登录':'登录已更新，恢复状态未确认';}
-     else{job.account=writeAccount(m.storage,email);m.storage=null;
+     else{job.account=writeAccount(m.storage,email,job.tier);m.storage=null;
       if(keep)try{creds.put(job.account,email,keep);}catch{}
       const ok=await syncPool();job.status='done';job.message=ok?'':'账号已保存，同步账号池未确认';}
     }catch(e){job.status='failed';job.message=e.message;}
@@ -187,7 +187,7 @@ http.createServer(async(req,res)=>{
    const dup=alreadyImported(email);if(dup)return send(res,409,{error:'该邮箱已在账号池中（账号 '+dup+'）'});
    if(busy())return send(res,409,{error:'已有登录在进行，请稍候'});
    if(!memOk())return send(res,503,{error:'服务器内存不足，暂不能登录'});
-   return send(res,202,view(startJob(email,password,{remember:b.remember===true})));
+   return send(res,202,view(startJob(email,password,{remember:b.remember===true,tier:b.tier})));
   }
   if(url.pathname==='/ws/config'){
    if(req.method==='GET'){const c=ws.config();const tok=fs.existsSync(path.join(ws.DATA,'mailbox-token.json'));return send(res,200,{config:c,mailAuthorized:tok,proxy:ws.proxyView(),busy:busy()});}

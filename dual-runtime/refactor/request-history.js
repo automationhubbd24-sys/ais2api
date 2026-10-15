@@ -113,6 +113,25 @@ class RequestHistory{
    await this.persist(row);return copy(row);
   });
  }
+ // Request counts per account/model for quota planning. Days follow Beijing time (UTC+8).
+ counts(now=this.clock()){
+  const OFF=8*3600000,DAY=86400000,todayStart=Math.floor((now+OFF)/DAY)*DAY-OFF;
+  const ranges={today:todayStart,week:todayStart-6*DAY,month:todayStart-29*DAY};
+  const groups=new Map(),zero=()=>({requests:0,success:0,rateLimited:0,errors:0});
+  for(const r of this.rows.values()){
+   if(r.createdAt<ranges.month||r.createdAt>now)continue;
+   const key=(r.account??'-')+'|'+r.model;
+   let g=groups.get(key);if(!g){g={account:r.account,model:r.model,today:zero(),week:zero(),month:zero(),lastAt:0,last429At:0};groups.set(key,g);}
+   for(const [name,from] of Object.entries(ranges)){
+    if(r.createdAt<from)continue;const c=g[name];c.requests++;
+    if(r.outcome==='success')c.success++;
+    else if(r.httpStatus===429)c.rateLimited++;
+    else if(['http_error','application_error','rejected'].includes(r.outcome))c.errors++;
+   }
+   g.lastAt=Math.max(g.lastAt,r.createdAt);if(r.httpStatus===429)g.last429At=Math.max(g.last429At,r.createdAt);
+  }
+  return {timezone:'Asia/Shanghai',ranges,items:[...groups.values()].sort((a,b)=>b.month.requests-a.month.requests),health:this.status()};
+ }
  status(){return {ready:this.ready,degraded:this.degraded,error:this.error,records:this.rows.size,capacity:this.maxRecords};}
  select({from=0,to=Number.MAX_SAFE_INTEGER,model:filterModel,account,outcome}={}){
   if(!Number.isSafeInteger(from)||!Number.isSafeInteger(to)||from<0||to<from)throw Error('Invalid date range');

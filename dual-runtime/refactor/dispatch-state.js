@@ -53,7 +53,7 @@ function read(file){
    if(!t||t.id!==id||!state.requests.includes(id)||t.slot!==slot||
       !/^[a-f0-9-]{36}$/.test(id)||!/^[a-f0-9-]{36}$/.test(t.workerEpoch||"")||
       !Number.isSafeInteger(t.account)||t.account<1||
-      !(d.version===1?["flash37","flash38","pro"]:["flash","pro"]).includes(t.kind)||
+      !(d.version===1?["flash37","flash38","pro"]:["flash","pro","ultra"]).includes(t.kind)||
       (d.version===2 && !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(t.model||""))||
       !["running","reconciling"].includes(t.phase)||
       !Number.isSafeInteger(t.createdAt)||t.createdAt<1)throw Error("Invalid persisted execution");
@@ -65,7 +65,7 @@ function read(file){
    if(!t||t.id!==id||state.requests.includes(id)||t.slot!==slot||
       !/^[a-f0-9-]{36}$/.test(id)||!/^[a-f0-9-]{36}$/.test(t.workerEpoch||"")||
       !Number.isSafeInteger(t.account)||t.account<1||t.phase!=="settled"||
-      !(d.version===1?["flash37","flash38","pro"]:["flash","pro"]).includes(t.kind)||
+      !(d.version===1?["flash37","flash38","pro"]:["flash","pro","ultra"]).includes(t.kind)||
       (d.version===2 && !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(t.model||""))||
       !Number.isSafeInteger(t.createdAt)||t.createdAt<1)throw Error("Invalid retirement");
   }

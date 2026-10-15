@@ -6,7 +6,7 @@ class DispatchCore {
   this.pool=pool;this.persist=persist;this.halted=false;
   this.accountFlags={};this.quotas=new ModelQuotaLedger();this.quotaExhausted=()=>false;
   this.slots=new Map(['A','B'].map(slot=>[slot,{active:0,requests:new Set(),executions:{},retirements:{},usesFlash37:0,usesFlash38:0,usesPro:0,windowStart:0,ready:false}]));
-  this.cursor=0;this.globalUntil=0;this.operations=new SlotOperations();
+  this.cursor=0;this.globalUntil=0;this.operations=new SlotOperations();this.slotAllows=()=>true;
  }
  checkpoint(){
   try{this.persist(this);}catch(e){this.halted=true;throw e;}
@@ -27,7 +27,7 @@ class DispatchCore {
  }
  acquire(id,plan,eligible=()=>true){
   if(!/^[a-f0-9-]{36}$/.test(id||""))throw Error("Invalid request ID");
-  if(!plan||typeof plan.model!=="string"||!["flash","pro"].includes(plan.quotaFamily))throw Error("Explicit model quota required");
+  if(!plan||typeof plan.model!=="string"||!["flash","pro","ultra"].includes(plan.quotaFamily))throw Error("Explicit model quota required");
   const {model,quotaFamily:kind}=plan;
   if([...this.slots.values()].some(s=>s.requests.has(id)||Object.hasOwn(s.retirements||{},id)))throw Error("Duplicate request");
   // Older coordinators persisted an account's 429 backoff as globalUntil.
@@ -67,11 +67,11 @@ class DispatchCore {
   this.checkpoint();return true;
  }
  retire(ticket){ const s=this.slots.get(ticket.slot),r=s?.retirements?.[ticket.id]; if(!r||r.account!==ticket.account||r.workerEpoch!==ticket.workerEpoch)throw Error("Stale retirement"); delete s.retirements[ticket.id];this.checkpoint(); }
- rotationCandidate(target,plan){
+ rotationCandidate(target,plan,slot){
   const now=Date.now();
   const excluded=new Set(plan?.excludedAccounts||[]);
   const available=id=>!this.accountFlags[id]&&!this.pool.owners.has(id)&&(this.pool.cooldowns.get(id)||0)<=now&&
-   !excluded.has(id)&&(!plan||this.quotas.view(id,plan.model,plan.quotaFamily,now).allowed);
+   !excluded.has(id)&&(slot===undefined||this.slotAllows(slot,id))&&(!plan||this.quotas.view(id,plan.model,plan.quotaFamily,now).allowed);
   if(target!==undefined){
    if(!this.pool.ids.includes(target))throw Error('Unknown account');
    // Explicit account selection must never fall through to another account.
@@ -101,7 +101,7 @@ class DispatchCore {
   const s=this.slots.get(slot);
   if(!this.rotationIdle(slot))throw Error('Slot not safe to rotate');
   if(manual!==true&&!this.quotaExhausted(slot,plan))throw Error('Model quotas not exhausted');
-  target=this.rotationCandidate(target,plan);
+  target=this.rotationCandidate(target,plan,slot);
   if(target===undefined)return null;
   const ticket=this.pool.reserve(slot,target);
   if(ticket){

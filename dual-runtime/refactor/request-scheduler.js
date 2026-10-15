@@ -167,7 +167,7 @@ class RequestScheduler {
    if (item.attemptedAccounts.has(account) || (this.dispatch.pool.cooldowns.get(account) || 0) >= item.deadline) return false;
    const quota = this.dispatch.quotas.view(account, item.plan.model, item.plan.quotaFamily);
    return quota.cooldownUntil < item.deadline && (!quota.legacyBlocked || quota.legacyUntil < item.deadline) &&
-    (quota.remaining > 0 || (quota.windowEnd > 0 && quota.windowEnd < item.deadline));
+    (quota.limit === null || quota.remaining > 0 || (quota.windowEnd > 0 && quota.windowEnd < item.deadline));
   });
  }
  async execute(ticket, item) {

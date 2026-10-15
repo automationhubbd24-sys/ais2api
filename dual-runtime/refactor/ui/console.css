@@ -468,3 +468,6 @@ dialog::backdrop { background: rgb(0 0 0 / .45); backdrop-filter: blur(2px); }
   .account-table .account-model-quota { width: 100%; max-width: none; }
   .cookie-cell { min-width: 0; }
 }
+
+.ultra-badge{margin-left:6px;padding:1px 6px;border-radius:6px;font-size:11px;background:#6d28d9;color:#fff}
+.count-table-wrap{overflow-x:auto}.count-table{width:100%;border-collapse:collapse;font-size:13px}.count-table th,.count-table td{padding:6px 8px;border-bottom:1px solid rgba(127,127,127,.2);text-align:left;white-space:nowrap}.count-table td small{display:block}

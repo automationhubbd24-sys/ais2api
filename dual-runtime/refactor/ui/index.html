@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>AIS2API 管理后台</title><link rel="stylesheet" href="/console-assets/console.css?v=9ec9c7e110"><link rel="stylesheet" href="/console-assets/console-panels.css?v=c9e45be81e"><link rel="stylesheet" href="/console-assets/models.css?v=9ca47550e7"><script src="/console-assets/console.js?v=force1791628376" defer></script><script src="/console-assets/shell.js?v=091603a161" defer></script><script src="/console-assets/models.js?v=4e1c92d622" defer></script><link rel="stylesheet" href="/console-assets/analytics.css?v=e90c51e849"><script src="/console-assets/analytics.js?v=fbc1e8a02b" defer></script><script src="/console-assets/prices.js?v=1c7eb216cf" defer></script><script src="/console-assets/proxies.js?v=6d8e765f73" defer></script></head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>AIS2API 管理后台</title><link rel="stylesheet" href="/console-assets/console.css?v=u1792047053"><link rel="stylesheet" href="/console-assets/console-panels.css?v=c9e45be81e"><link rel="stylesheet" href="/console-assets/models.css?v=9ca47550e7"><script src="/console-assets/console.js?v=u1792047053" defer></script><script src="/console-assets/shell.js?v=091603a161" defer></script><script src="/console-assets/models.js?v=4e1c92d622" defer></script><link rel="stylesheet" href="/console-assets/analytics.css?v=u1792047053"><script src="/console-assets/analytics.js?v=u1792047053" defer></script><script src="/console-assets/prices.js?v=1c7eb216cf" defer></script><script src="/console-assets/proxies.js?v=6d8e765f73" defer></script></head>
 <body>
 <svg class="icon-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
 <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
@@ -61,7 +61,7 @@
 
 <div class="form-row">
 <label>模型<select id="policy-model"><option value="">先刷新目录</option></select></label>
-<label>额度类别<select id="policy-bucket"><option value="">请选择</option><option value="flash">Flash · 每模型 100</option><option value="pro">Pro · 每模型 10</option></select></label>
+<label>额度类别<select id="policy-bucket"><option value="">请选择</option><option value="flash">Flash · 每模型 100</option><option value="pro">Pro · 每模型 10</option><option value="ultra">Ultra · 仅 Ultra 账号，不限次数</option></select></label>
 <label><input id="policy-anti" type="checkbox">允许防截断续传</label>
 <button id="policy-save" class="primary" disabled>保存规则</button></div>
 <p id="policy-message" role="status">尚未读取策略</p></div>
@@ -74,8 +74,8 @@
  <p id="usage-message" class="muted" role="status">等待读取</p>
  <div id="usage-cards" class="stats"></div>
  <div class="card distribution-card"><div class="section-head"><div class="heading-icon"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg><div><h2>模型统计</h2></div></div></div><div id="usage-models"></div></div>
- 
- </section>
+ <div class="card"><div class="section-head"><div class="heading-icon"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg><div><h2>请求次数</h2><p class="muted">按账号和模型统计，用于确定额度上限</p></div></div></div><div id="usage-counts"><p class="muted">读取中</p></div></div>
+</section>
  <section id="history" class="page" hidden>
  <form id="history-filter" class="card form-row">
  <label>模型<input id="history-model" maxlength="200" placeholder="模型名称（精确匹配）" autocomplete="off"></label>

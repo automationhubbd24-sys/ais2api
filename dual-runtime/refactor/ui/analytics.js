@@ -21,6 +21,31 @@
    const data=await response.json();if(!response.ok)throw Error(typeof data.error==='string'?data.error:'接口不可用');return data;
   }catch(e){if(timedOut)throw Error('接口 15 秒未响应，请稍后重试');throw e;}finally{clearTimeout(timer);}
  }
+ async function setTier(id,tier,button){
+  if(tier==='ultra'&&!confirm('将账号 #'+id+' 标记为 Ultra？\n开启 Ultra 专用实例后，它只会分配到专用实例。'))return;
+  button.disabled=true;
+  try{const r=await fetch('/api/accounts/tier',{method:'POST',credentials:'same-origin',redirect:'error',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({id,tier})});
+   const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||'保存失败');
+   const a=accountData.find(x=>x.id===id);if(a)a.tier=d.tier;renderAccountDetail();document.dispatchEvent(new Event('ais-refresh'));
+  }catch(e){alert('修改分类失败：'+e.message);button.disabled=false;}
+ }
+ async function loadCounts(control){
+  const box=byId('usage-counts');if(!box)return;
+  try{const d=await read('/api/usage-counts',control);box.replaceChildren();
+   if(!d.items.length){box.append(node('p','近 30 天没有请求记录','muted'));return;}
+   const table=node('table',undefined,'count-table'),head=node('tr');
+   for(const h of ['账号','模型','今天','近 7 天','近 30 天','429 次数','最近 429'])head.append(node('th',h));
+   const thead=node('thead');thead.append(head);table.append(thead);const body=node('tbody');
+   for(const i of d.items){const tr=node('tr');
+    const who=node('td');who.append(node('span','#'+(i.account??'—')));if(i.tier==='ultra')who.append(node('span','Ultra','badge ultra-badge'));tr.append(who);
+    tr.append(node('td',i.model));
+    for(const k of ['today','week','month']){const c=i[k],td=node('td');td.append(node('strong',fmt(c.requests)));td.append(node('small',' 成功 '+fmt(c.success),'muted'));tr.append(td);}
+    tr.append(node('td',fmt(i.today.rateLimited)+' / '+fmt(i.week.rateLimited)+' / '+fmt(i.month.rateLimited)));
+    tr.append(node('td',i.last429At?time(i.last429At):'—'));body.append(tr);}
+   table.append(body);const wrap=node('div',undefined,'count-table-wrap');wrap.append(table);box.append(wrap);
+   box.append(node('p','按北京时间统计。今天从 0 点算起，近 7 天、近 30 天包含今天；429 列依次为今天 / 近 7 天 / 近 30 天。','muted'));
+  }catch(e){if(e.name!=='AbortError'){box.replaceChildren(node('p','请求次数读取失败：'+e.message,'warn'));}}
+ }
  function recordingWarning(d){const h=d.recording?.history||d.health;return h?.degraded||h?.ready===false||(d.recording?.beginFailures||0)+(d.recording?.finishFailures||0)?' · 统计可能不完整':'';}
  function card(title,value,note,kind){const e=node('article',undefined,'card stat stat-'+kind),head=node('div',undefined,'stat-heading'),mark=node('span',undefined,'stat-mark');mark.append(icon(kind));head.append(node('span',title),mark);e.append(head,node('strong',value),node('small',note));return e;}
  function rangeQuery(){const choice=byId('usage-range').value,params=new URLSearchParams();if(choice!=='all'){let from;if(choice==='today'){const d=new Date();d.setHours(0,0,0,0);from=d.getTime();}else from=Date.now()-Number(choice)*86400000;params.set('from',String(from));}return params.toString();}
@@ -52,6 +77,7 @@
  }
  async function loadUsage(){
   usageController?.abort();const control=new AbortController();usageController=control;byId('usage-refresh').disabled=true;byId('usage').setAttribute('aria-busy','true');
+  loadCounts(control);
   try{const d=await read('/api/usage?'+rangeQuery(),control);if(usageController!==control)return;
    if(!Number.isSafeInteger(d.requests)||!Array.isArray(d.models))throw Error('统计数据格式不完整');latestUsage=d;
    const box=byId('usage-cards'),period=byId('usage-range').value==='today'?'今日':'区间';box.replaceChildren();box.append(
@@ -104,16 +130,16 @@
   const box=byId('quota-accounts'),a=accountData.find(item=>String(item.id)===String(selectedAccount));box.replaceChildren();
   if(!a){box.append(node('div','该账号已不在当前账号池中。','card empty'));return;}
   byId('account-dialog-title').textContent=a.name||'未命名账号';byId('account-dialog-subtitle').textContent='账号 #'+a.id+' · '+(a.owner?'实例 '+a.owner:a.cooldownUntil>Date.now()?'冷却中':'未分配');
-  const overview=node('div',undefined,'account-detail-overview'),title=node('h3','状态与额度'),fields=node('div',undefined,'account-detail-fields');overview.append(title);pair(fields,'当前实例',a.owner||'未分配');pair(fields,'账号状态',a.cooldownUntil>Date.now()?'冷却中':a.owner?'已分配':'备用');overview.append(fields);box.append(overview);
+  const overview=node('div',undefined,'account-detail-overview'),title=node('h3','状态与额度'),fields=node('div',undefined,'account-detail-fields');overview.append(title);pair(fields,'当前实例',a.owner||'未分配');pair(fields,'账号状态',a.cooldownUntil>Date.now()?'冷却中':a.owner?'已分配':'备用');pair(fields,'账号分类',a.tier==='ultra'?'Ultra':'普通');overview.append(fields);{const t=node('button',a.tier==='ultra'?'改为普通账号':'标记为 Ultra 账号');t.type='button';t.addEventListener('click',()=>setTier(a.id,a.tier==='ultra'?'standard':'ultra',t));overview.append(t);}box.append(overview);
   if(a.cooldownUntil>Date.now())box.append(node('div','账号冷却至 '+time(a.cooldownUntil),'note warn'));
   if(!a.quota){box.append(node('div','额度信息不可用','note warn'));return;}
   const models=Object.values(a.quota.models||{});if(!models.length){box.append(node('div','尚未配置模型额度策略','empty'));return;}
   const heading=node('div',undefined,'quota-section-heading');heading.append(node('h3','模型额度'),node('span',models.length+' 个模型','badge'));box.append(heading);
   const list=node('div',undefined,'quota-model-list');
   for(const q of models){
-   const row=node('div',undefined,'quota'),line=node('div',undefined,'quota-label'),valid=Number.isFinite(q.used)&&Number.isFinite(q.limit)&&q.limit>0,remaining=valid?Math.max(0,q.limit-q.used):undefined,percent=valid?remaining/q.limit*100:undefined;
-   const name=node('div',undefined,'quota-model-name');name.append(node('strong',q.model),node('small',q.legacyBlocked?'历史记录待核实':valid?'已记录 '+fmt(q.used)+' 次 / 上限 '+fmt(q.limit)+' 次':'额度信息未提供'));
-   const state=node('div',undefined,'quota-model-state'),reset=q.legacyBlocked?'历史窗口截止 '+time(q.legacyUntil):q.cooldownUntil>Date.now()?'冷却至 '+time(q.cooldownUntil):q.windowEnd?'窗口结束 '+time(q.windowEnd):'额度窗口尚未启用';state.append(node('small',reset,q.cooldownUntil>Date.now()?'warn':''),node('strong',q.legacyBlocked?'待核实':valid?fmt(percent)+'%':'未知',q.legacyBlocked?'warn':''));line.append(name,state);row.append(line);
+   const row=node('div',undefined,'quota'),line=node('div',undefined,'quota-label'),unlimited=q.limit===null&&Number.isFinite(q.used),valid=Number.isFinite(q.used)&&Number.isFinite(q.limit)&&q.limit>0,remaining=valid?Math.max(0,q.limit-q.used):undefined,percent=valid?remaining/q.limit*100:undefined;
+   const name=node('div',undefined,'quota-model-name');name.append(node('strong',q.model),node('small',q.legacyBlocked?'历史记录待核实':unlimited?'已记录 '+fmt(q.used)+' 次 · 不设上限，直到 429':valid?'已记录 '+fmt(q.used)+' 次 / 上限 '+fmt(q.limit)+' 次':'额度信息未提供'));
+   const state=node('div',undefined,'quota-model-state'),reset=q.legacyBlocked?'历史窗口截止 '+time(q.legacyUntil):q.cooldownUntil>Date.now()?'冷却至 '+time(q.cooldownUntil):q.windowEnd?'窗口结束 '+time(q.windowEnd):'额度窗口尚未启用';state.append(node('small',reset,q.cooldownUntil>Date.now()?'warn':''),node('strong',q.legacyBlocked?'待核实':unlimited?'不限':valid?fmt(percent)+'%':'未知',q.legacyBlocked?'warn':''));line.append(name,state);row.append(line);
    if(valid&&!q.legacyBlocked){const bar=node('progress');bar.max=q.limit;bar.value=remaining;bar.setAttribute('aria-label',q.model+' 剩余次数 '+remaining);if(percent<=20)bar.className='quota-low';row.append(bar);}list.append(row);
   }box.append(list);
  }

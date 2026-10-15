@@ -10,7 +10,7 @@ function el(tag,text,cls){const n=document.createElement(tag);if(text!==undefine
 function consoleIcon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),use=document.createElementNS('http://www.w3.org/2000/svg','use');svg.classList.add('icon');svg.setAttribute('aria-hidden','true');use.setAttribute('href','#i-'+name);svg.append(use);return svg;}
 function statusBadge(label,tone=''){const badge=el('span',undefined,'badge '+tone);badge.append(el('i',undefined,'status-dot'),document.createTextNode(label));return badge;}
 function openAccount(id){document.dispatchEvent(new CustomEvent('ais-account-details',{detail:{id}}));}
-function quotaFraction(q){return !q?.legacyBlocked&&Number.isFinite(q?.used)&&Number.isFinite(q?.limit)&&q.limit>0?Math.max(0,Math.min(1,(q.limit-q.used)/q.limit)):null;}
+function quotaFraction(q){return q?.limit===null?null:!q?.legacyBlocked&&Number.isFinite(q?.used)&&Number.isFinite(q?.limit)&&q.limit>0?Math.max(0,Math.min(1,(q.limit-q.used)/q.limit)):null;}
 function quotaTone(fraction){return fraction===null?'unknown':fraction<=.1?'low':fraction<=.25?'limited':'healthy';}
 function applyAccountColumns(){
  document.querySelectorAll('.account-table tr').forEach(row=>{if(row.children.length===7)[...row.children].forEach((cell,index)=>{cell.hidden=hiddenAccountColumns.has(index);cell.dataset.label=accountColumns[index];});else if(row.children[0])row.children[0].colSpan=7-hiddenAccountColumns.size;});
@@ -120,7 +120,7 @@ function renderAccountRows(d=state){
  for(const a of accounts.slice((accountPage-1)*size,accountPage*size)){
   const row=el('tr'),identity=el('td'),name=el('button',undefined,'account-name account-name-button'),text=el('div',undefined,'account-identity');
   name.type='button';name.setAttribute('aria-label','查看账号 '+a.id+' 的额度详情');name.addEventListener('click',()=>openAccount(a.id));
-  const nameLine=el('div',undefined,'account-title-line');nameLine.append(el('strong',a.name||'未命名账号'));
+  const nameLine=el('div',undefined,'account-title-line');nameLine.append(el('strong',a.name||'未命名账号'));if(a.tier==='ultra')nameLine.append(el('span','Ultra','badge ultra-badge'));
   text.append(nameLine,el('small','账号 #'+a.id));name.append(el('span',String(a.name||a.id).slice(0,1).toUpperCase(),'avatar'),text);identity.append(name);row.append(identity);
   const owner=el('td');owner.append(el('span',a.owner?'实例 '+a.owner:'未分配',a.owner?'instance-chip':'muted'));row.append(owner);
   const quotaCell=el('td'),quotaBox=el('button',undefined,'account-model-quota'),models=Object.values(a.quota?.models||{}),known=models.map(quotaFraction).filter(value=>value!==null);

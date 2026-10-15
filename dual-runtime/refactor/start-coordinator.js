@@ -34,6 +34,13 @@ async function main(){
  const {ModelPolicyStore}=require("./model-policy-store");
  const policyStore=new ModelPolicyStore(path.join(root,"model-policies.json"),cfg.modelPolicies||{});
  const routing=new CatalogRouting(dispatch,catalogs,policyStore.policies);
+ const {AccountTiers}=require('./account-tiers');
+ let browserLeaseRef=null;
+ const tiers=new AccountTiers({authDir:'/opt/ais2api/auth',file:path.join(root,'ultra-mode.json'),isSingle:()=>browserLeaseRef?.mode?.single===true});
+ dispatch.slotAllows=(slot,id)=>tiers.allowed(slot,id);
+ dispatch.slotRule=slot=>!tiers.active()?'':slot===tiers.mode.slot?'实例 '+slot+' 只用 Ultra 账号':'实例 '+slot+' 不使用 Ultra 账号';
+ dispatch.quotas.unlimited=id=>tiers.isUltra(id);
+ routing.isUltra=id=>tiers.isUltra(id);
  scheduler.resolveModel=(route,body,options)=>routing.resolve(route,body,options);
  dispatch.quotaExhausted=(slot,plan)=>routing.exhausted(slot,plan);
  let stopping=false;
@@ -61,7 +68,7 @@ async function main(){
  };
  const status=()=>({
   halted:dispatch.halted,queue:scheduler.queue.length,scheduling:scheduler.status(),
-  streamingMode:lastMode,rotationThrottle:{...dispatch.rotationThrottle,intervalMs:300000},keepalive:keepalive.status(),browserLease:browserLease?browserLease.status():null,runMode:browserLease?browserLease.modeStatus():null,
+  streamingMode:lastMode,ultra:tiers.status(dispatch.pool.ids),rotationThrottle:{...dispatch.rotationThrottle,intervalMs:300000},keepalive:keepalive.status(),browserLease:browserLease?browserLease.status():null,runMode:browserLease?browserLease.modeStatus():null,
   analytics:recordedForward.status(),
   retiredCleanup:cleanup.status(),
   quotaMode:"per-account-per-model",quotaLimits:{flash:100,pro:10},
@@ -87,7 +94,7 @@ async function main(){
    const flag=dispatch.accountFlags[id];
    return {cookie:cookieStatus(id,owner,flag),authStatus:flag?.status||'unknown',invalidReason:flag?.reason,
     invalidAt:flag?.at,canDelete:!!flag&&flag.status!=='deleted'&&!accountOccupied(id),
-    id,name,owner:owner||null,cooldownUntil,quota:dispatch.quotas.summary(id,policyStore.policies)};
+    id,name,tier:tiers.tier(id),owner:owner||null,cooldownUntil,quota:dispatch.quotas.summary(id,policyStore.policies)};
   })
  });
  const {ProxySettings}=require('./proxy-settings');
@@ -98,7 +105,7 @@ async function main(){
  const keepalive=new SpareKeepalive({dispatch,driver,client,scheduler,rotation,occupied:accountOccupied,isStopping:()=>stopping});
  const {BrowserLease}=require('./browser-lease');
  const browserLease=new BrowserLease({dispatch,driver,client,rotation,scheduler,isStopping:()=>stopping,file:path.join(root,'run-mode.json')});
- browserLease.init();
+ browserLease.init();browserLeaseRef=browserLease;
  const {TargetApp}=require('./target-app');
  const targetApp=new TargetApp({root,
   isBusy:slot=>stopping||dispatch.operations.has(slot)||rotation.running.has(slot),
@@ -109,6 +116,10 @@ async function main(){
   leaseAcquire:body=>browserLease.acquire(body?.owner),
   leaseRelease:()=>browserLease.release(false),
   runMode:()=>browserLease.modeStatus(),
+  ultraMode:()=>tiers.status(dispatch.pool.ids),
+  setUltraMode:body=>{const r=tiers.setMode(body);monitor.tick();return tiers.status(dispatch.pool.ids);},
+  setAccountTier:body=>{const id=Number(body?.id);if(!dispatch.pool.ids.includes(id))throw Object.assign(Error('账号 '+body?.id+' 不在账号池'),{statusCode:404});
+   const r=tiers.setTier(id,body?.tier);monitor.tick();return r;},
   setRunMode:body=>browserLease.setMode(body),
   targetApp:()=>targetApp.status(),
   saveTargetApp:body=>targetApp.save(body),
@@ -155,6 +166,7 @@ async function main(){
    return {...saved,models:[...routing.policies.keys()].sort()};
   },
   historyList(options){return {...history.list(options),recording:recordedForward.status()};},
+  usageCounts(){const r=history.counts();for(const i of r.items)i.tier=Number.isSafeInteger(i.account)?tiers.tier(i.account):null;return r;},
   historySummary(options){return {...history.summary(options),recording:recordedForward.status()};},
   async models(){
    const errors={};

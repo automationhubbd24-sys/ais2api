@@ -7,7 +7,7 @@ function validate(policies){
  return Object.fromEntries(entries.map(([id,p])=>{
   if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(id)||!p||Array.isArray(p)||
      Object.keys(p).some(k=>!["quotaFamily","antiTruncation"].includes(k))||
-     !["flash","pro"].includes(p.quotaFamily)||
+     !["flash","pro","ultra"].includes(p.quotaFamily)||
      typeof p.antiTruncation!=="boolean")throw Error("Invalid model policy");
   return [id,{quotaFamily:p.quotaFamily,antiTruncation:p.antiTruncation}];
  }));

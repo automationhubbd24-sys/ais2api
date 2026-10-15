@@ -9,7 +9,7 @@ async function main(){
  system.requestHandler._switchToSpecificAuth=denied;
  system.browserManager.launchOrSwitchContext=async()=>{throw Error('Management cannot launch browsers');};
  const app=system._createExpressApp();
- const allowed=new Set(['GET /login','POST /login','GET /import','POST /api/import-account','GET /','GET /api/status','GET /api/models','POST /api/models/refresh','GET /favicon.ico','GET /console-assets/console.css','GET /console-assets/console.js','GET /console-assets/models.js','POST /api/set-mode','POST /api/rotate','POST /api/restart','POST /api/sync-accounts']);
+ const allowed=new Set(['GET /login','POST /login','GET /import','POST /api/import-account','GET /','GET /api/status','GET /api/models','POST /api/models/refresh','GET /favicon.ico','GET /console-assets/console.css','GET /console-assets/console.js','GET /console-assets/models.js','POST /api/set-mode','POST /api/rotate','POST /api/restart','GET /api/ultra-mode','GET /api/usage-counts','POST /api/ultra-mode','POST /api/accounts/tier','POST /api/sync-accounts']);
  allowed.add("POST /api/models/policy");
  allowed.add('GET /api/requests');
  allowed.add('GET /api/usage');
@@ -105,7 +105,7 @@ require('./console-routes').install(dashboard);
   }
   const {model,quotaFamily,antiTruncation,revision}=req.body||{};
   if(typeof model!=="string"||model.length>200||!Number.isSafeInteger(revision)||revision<0||
-     !["flash","pro"].includes(quotaFamily)||typeof antiTruncation!=="boolean")
+     !["flash","pro","ultra"].includes(quotaFamily)||typeof antiTruncation!=="boolean")
    return res.status(400).json({error:"Invalid model policy"});
   const result=await call("POST","/internal/models/policy",{model,quotaFamily,antiTruncation,revision});
   res.status(result.status).json(result.body);
@@ -129,6 +129,10 @@ require('./console-routes').install(dashboard);
   const r=await call('POST','/internal/rotate',payload);
   if(!res.destroyed)res.status(r.status).json(r.body);
  });
+ dashboard.get('/api/usage-counts',async(req,res)=>{const r=await call('GET','/internal/usage-counts');res.status(r.status).json(r.body);});
+ dashboard.get('/api/ultra-mode',async(req,res)=>{const r=await call('GET','/internal/ultra-mode');res.status(r.status).json(r.body);});
+ dashboard.post('/api/ultra-mode',async(req,res)=>{const r=await call('POST','/internal/ultra-mode',{enabled:req.body?.enabled,slot:req.body?.slot});res.status(r.status).json(r.body);});
+ dashboard.post('/api/accounts/tier',async(req,res)=>{const r=await call('POST','/internal/accounts/tier',{id:req.body?.id,tier:req.body?.tier});res.status(r.status).json(r.body);});
  dashboard.post('/api/restart',async(req,res)=>{
   const slot=req.body?.slot;
   if(!['A','B'].includes(slot))return res.status(400).json({error:'slot must be A or B'});
@@ -144,7 +148,7 @@ require('./console-routes').install(dashboard);
  dashboard.post('/api/login/start',async(req,res)=>{
   if(!loginGuard(req,res))return;
   const email=typeof req.body?.email==='string'?req.body.email:'',password=typeof req.body?.password==='string'?req.body.password:'';
-  const r=await loginCall('POST','/login/start',{email,password,remember:req.body?.remember===true});
+  const r=await loginCall('POST','/login/start',{email,password,remember:req.body?.remember===true,tier:req.body?.tier==='ultra'?'ultra':'standard'});
   res.status(r.status).json(r.body);
  });
  const jobPath=id=>/^[0-9a-f-]{36}$/.test(String(id||''))?'/login/'+id:null;

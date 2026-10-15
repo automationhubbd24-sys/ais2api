@@ -49,7 +49,7 @@ function createServer({keys,models,scheduler,status,actions}){
    if(req.method==="POST" && url.pathname==="/internal/models/policy"){
     const body=await readBody();
     if(!body||typeof body.model!=="string"||!Number.isSafeInteger(body.revision)||body.revision<0||
-       !["flash","pro"].includes(body.quotaFamily)||
+       !["flash","pro","ultra"].includes(body.quotaFamily)||
        typeof body.antiTruncation!=="boolean")
      return json(res,400,{error:"Invalid model policy"});
     try{
@@ -127,6 +127,14 @@ function createServer({keys,models,scheduler,status,actions}){
     if(req.method==='POST'){
      try{const body=await readBody();return json(res,200,body?.action==='apply'?actions.applyTargetApp():actions.saveTargetApp(body));}
      catch(e){return json(res,[400,409].includes(e.statusCode)?e.statusCode:503,{error:[400,409].includes(e.statusCode)?e.message:'保存未确认'});}
+    }
+   }
+   if(req.method==='GET'&&url.pathname==='/internal/usage-counts')return json(res,200,actions.usageCounts());
+   if(url.pathname==='/internal/ultra-mode'||url.pathname==='/internal/accounts/tier'){
+    if(req.method==='GET'&&url.pathname==='/internal/ultra-mode')return json(res,200,actions.ultraMode());
+    if(req.method==='POST'){
+     try{const body=await readBody();return json(res,200,url.pathname==='/internal/ultra-mode'?actions.setUltraMode(body):actions.setAccountTier(body));}
+     catch(e){const code=[400,404,409].includes(e.statusCode)?e.statusCode:503;return json(res,code,{error:code===503?'保存未确认':e.message});}
     }
    }
    if(url.pathname==='/internal/run-mode'){

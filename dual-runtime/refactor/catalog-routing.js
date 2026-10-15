@@ -2,11 +2,11 @@
 const {parseRequestModel}=require("./request-model");
 class CatalogRouting {
  constructor(dispatch,catalogs,policies={}){
-  this.dispatch=dispatch;this.catalogs=catalogs;this.policies=new Map();
+  this.dispatch=dispatch;this.catalogs=catalogs;this.policies=new Map();this.isUltra=()=>false;
   if(!policies||typeof policies!=="object"||Array.isArray(policies))throw Error("Invalid model policies");
   for(const [id,p] of Object.entries(policies)){
    if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id)||!p||
-      !["flash","pro"].includes(p.quotaFamily)||
+      !["flash","pro","ultra"].includes(p.quotaFamily)||
       typeof p.antiTruncation!=="boolean")throw Error("Invalid model policy");
    this.policies.set(id,Object.freeze({...p}));
   }
@@ -31,9 +31,10 @@ class CatalogRouting {
   catch{throw Object.assign(Error("Invalid request model"),{statusCode:400});}
   const policy=this.policies.get(request.upstreamId);
   if(!policy)throw Object.assign(Error("Explicit quota policy required for this model"),{statusCode:422});
+  if(policy.quotaFamily==="ultra"&&!this.dispatch.pool.ids.some(id=>this.isUltra(id)&&!this.dispatch.accountFlags[id]))throw Object.assign(Error("This model needs an Ultra account; none is available in the account pool"),{statusCode:503});
   if(request.antiTruncation && !policy.antiTruncation)
    throw Object.assign(Error("Anti-truncation unsupported for this model"),{statusCode:422});
-  const eligible=(slot,account)=>this.eligible(slot,account,request.upstreamId);
+  const eligible=(slot,account)=>(policy.quotaFamily!=="ultra"||this.isUltra(account))&&this.eligible(slot,account,request.upstreamId);
   if(!allowUnavailable&&![...this.dispatch.pool.slots].some(([slot,owner])=>eligible(slot,owner.current)))
    throw Error("Model unavailable in a fresh synchronized account catalog");
   return {model:request.upstreamId,quotaFamily:policy.quotaFamily,eligible};
@@ -72,7 +73,8 @@ class CatalogRouting {
    const excluded=new Set(plan.excludedAccounts||[]);
    for(let i=0;i<pool.ids.length;i++){
     const target=pool.ids[(pool.cursor+i)%pool.ids.length];
-    if(this.dispatch.accountFlags[target]||pool.owners.has(target)||excluded.has(target)||(pool.cooldowns.get(target)||0)>now)continue;
+    if(this.dispatch.accountFlags[target]||pool.owners.has(target)||excluded.has(target)||(pool.cooldowns.get(target)||0)>now||!this.dispatch.slotAllows(slot,target))continue;
+     if(plan.quotaFamily==='ultra'&&!this.isUltra(target))continue;
     if(!this.dispatch.quotas.view(target,plan.model,plan.quotaFamily,now).allowed)continue;
     return {model:plan.model,quotaFamily:plan.quotaFamily,target,excludedAccounts:[...excluded]};
    }

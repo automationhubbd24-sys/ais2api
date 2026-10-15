@@ -39,14 +39,15 @@ module.exports = function(app, system) {
       const nums=fs.readdirSync(dir).filter(n=>/^auth-\d+\.json$/.test(n)).map(n=>Number(n.match(/\d+/)[0]));
       if(nums.length>=50) return res.status(409).json({error:"账号数量已达上限"});
       const index=Math.max(0,...nums)+1;
-      const content=JSON.stringify({cookies,origins,accountName:"导入账号 "+index});
+      const tier=req.get("X-Account-Tier")==="ultra"?"ultra":"standard";
+      const content=JSON.stringify({cookies,origins,accountName:"导入账号 "+index,...(tier==="ultra"?{accountTier:"ultra"}:{})});
       if(Buffer.byteLength(content)>262144) return res.status(413).json({error:"文件过大"});
       fs.writeFileSync(path.join(dir,"auth-"+index+".json"),content,{flag:"wx",mode:0o600});
       system.authSource.initialIndices.push(index);
       system.authSource.availableIndices.push(index);
       system.authSource.accountNameMap.set(index,"导入账号 "+index);
       system.logger.info("[Import] 新增账号 #"+index+"，尚未验证");
-      res.json({index,verified:false});
+      res.json({index,tier,verified:false});
     } catch(e) {res.status(400).json({error:"文件结构不符合要求，或无法安全保存",detail:e && e.message ? String(e.message).slice(0,200) : "unknown"});}
   });
 };
