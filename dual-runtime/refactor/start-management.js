@@ -44,8 +44,12 @@ async function main(){
   const KEY=['SID','HSID','SSID','APISID','SAPISID','__Secure-1PSID','__Secure-3PSID','__Secure-1PSIDTS','__Secure-3PSIDTS','__Secure-1PSIDCC','__Secure-3PSIDCC'];
   const check={present:KEY.filter(n=>names.has(n)),missing:KEY.filter(n=>!names.has(n)),total:names.size};
   const noTs=!names.has('__Secure-1PSIDTS')&&!names.has('__Secure-3PSIDTS');
-  if(b.mode==='check')return res.json({check,ok:!noTs});
-  if(noTs&&b.force!==true)return res.status(422).json({error:'缺少 __Secure-1PSIDTS / __Secure-3PSIDTS，导入后基本会被 Google 判定为登录失效，没有导入',check,needForce:true});
+  // Which signed-in Google account this is (browser multi-login). The worker opens AI Studio without
+  // authuser, i.e. as account 0, so any other index would run as the wrong account or hit a sign-in page.
+  const authUser=Number.isSafeInteger(b.authUser)&&b.authUser>=0&&b.authUser<10?b.authUser:0;
+  check.authUser=authUser;
+  if(b.mode==='check')return res.json({check,ok:authUser===0});
+  if(authUser!==0&&b.force!==true)return res.status(422).json({error:'这是浏览器里的第 '+(authUser+1)+' 个 Google 账号（authuser='+authUser+'）。服务器只会打开第 1 个账号，导入后会用错账号或跳到登录页，没有导入',check,needForce:true,reason:'authuser'});
   try{
    const r=require('./import-ui').saveImport(system,b.state,{tier:b.tier,alias:typeof b.alias==='string'?b.alias:'',mode});
    let note='';
@@ -56,6 +60,7 @@ async function main(){
     const using=Object.entries(st.body?.slots||{}).filter(([,x])=>x&&x.account===r.index).map(([k])=>k);
     if(using.length)note=(note?note+'；':'')+'实例 '+using.join('/')+' 正在用这个账号，下次切换或重启实例后使用新 Cookie';
    }else await ctl('POST','/internal/sync-accounts',{});
+   if(noTs)note=(note?note+'；':'')+'没有 __Secure-1PSIDTS，大多数账号仍可用，若启动时跳登录页请改用账号密码登录';
    res.json({...r,note,check});
   }catch(e){
    if(e.status)return res.status(e.status).json(e.body);

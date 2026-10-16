@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AIS2API Cookie 同步
 // @namespace    ais2api-cookie-sync
-// @version      1.1.0
+// @version      1.2.0
 // @description  在 AI Studio 页面一键把当前 Google 登录状态导入 / 更新到 AIS2API 账号池；可检查 Cookie 是否完整
 // @match        https://aistudio.google.com/*
 // @match        https://accounts.google.com/*
@@ -87,6 +87,14 @@ async function collect(){
  }
  return {state:{cookies,origins:[{origin:'https://aistudio.google.com',localStorage:ls}]},diag};
 }
+// Which signed-in Google account the page is using (/u/N/ or ?authuser=N). Same detection as the old RE Proxy script.
+function authUser(){
+ try{
+  const m=location.pathname.match(/\/u\/(\d+)(?:\/|$)/);if(m)return Number(m[1]);
+  const q=new URL(location.href).searchParams.get('authuser');if(q&&/^\d+$/.test(q))return Number(q);
+ }catch{}
+ return 0;
+}
 function fingerprint(state){
  return state.cookies.filter(c=>SESSION.concat(TS).includes(c.name)).map(c=>c.name+'='+c.value).sort().join(';');
 }
@@ -95,7 +103,7 @@ function post(body,mode,force){
  return new Promise((resolve,reject)=>GM_xmlhttpRequest({
   method:'POST',url:SERVER+'/api/cookie-sync',timeout:30000,anonymous:true,
   headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
-  data:JSON.stringify({mode,force:force===true,tier:c.tier,alias:c.alias,state:body}),
+  data:JSON.stringify({mode,force:force===true,authUser:authUser(),tier:c.tier,alias:c.alias,state:body}),
   onload:r=>{let d={};try{d=JSON.parse(r.responseText);}catch{}resolve({status:r.status,d});},
   onerror:()=>reject(Error('无法连接服务器')),ontimeout:()=>reject(Error('连接服务器超时'))
  }));
@@ -105,7 +113,8 @@ function report(check,diag){
  const lines=[];
  if(check){
   const okTs=!check.missing.includes('__Secure-1PSIDTS')||!check.missing.includes('__Secure-3PSIDTS');
-  lines.push(okTs?'结论：登录 Cookie 完整，可以导入。':'结论：缺少 __Secure-1PSIDTS / __Secure-3PSIDTS，导入后会被 Google 判定登录失效。');
+  const au=check.authUser||0;
+  lines.push(au!==0?'结论：这是浏览器里的第 '+(au+1)+' 个 Google 账号（authuser='+au+'）。服务器只会打开第 1 个账号，请在浏览器里只登录这一个账号，或用无痕窗口单独登录后再导入。':okTs?'结论：登录 Cookie 完整，可以导入。':'结论：可以导入，但没有 __Secure-1PSIDTS。多数账号没有它也能用；如果导入后服务器跳到登录页，再改用账号密码登录。');
   lines.push('','读到的登录 Cookie：'+(check.present.join('、')||'无'),'缺少：'+(check.missing.join('、')||'无'),'Cookie 总数（去重名称）：'+check.total);
  }
  lines.push('','PSIDTS 来源：'+(Object.keys(diag.ts).length?Object.entries(diag.ts).map(([k,v])=>k+' ← '+v.join('/')).join('；'):'各种方式都没读到'));
@@ -114,7 +123,7 @@ function report(check,diag){
  if(diag.skipped.length)lines.push('','跳过：',...diag.skipped.slice(0,30).map(s=>'  '+s));
  lines.push('','环境：'+(GM_info?.scriptHandler||'?')+' '+(GM_info?.version||'')+'；'+ua.join(' '));
  if(check&&check.missing.includes('__Secure-1PSIDTS')&&check.missing.includes('__Secure-3PSIDTS')&&!Object.keys(diag.ts).some(k=>!k.includes('查询')))
-  lines.push('','说明：脚本已经按网址、按名称都查过了，浏览器没有把这两个 Cookie 交给脚本。多半是浏览器把登录绑定在本机（设备绑定会话），这种 Cookie 导不出去。请改用导入页的“账号密码登录”。');
+  lines.push('','说明：脚本按网址、按名称都查过，浏览器没有给出 PSIDTS。');
  return lines.join('\n');
 }
 let running=false;
@@ -137,8 +146,8 @@ async function sync(mode,quiet){
   let {status,d}=await post(state,mode);
   if(status===422&&d.needForce){
    if(quiet){console.warn('[AIS2API] 自动同步跳过：缺少 PSIDTS');return;}
-   panel('没有导入：Cookie 不完整',report(d.check,diag));
-   if(!confirm('缺少 __Secure-1PSIDTS / __Secure-3PSIDTS，导入后大概率是登录失效。\n仍然导入吗？'))return;
+   panel('没有导入',(d.error||'')+'\n\n'+report(d.check,diag));
+   if(!confirm((d.error||'检查未通过')+'\n\n仍然导入吗？'))return;
    ({status,d}=await post(state,mode,true));
   }
   if(status===200){
