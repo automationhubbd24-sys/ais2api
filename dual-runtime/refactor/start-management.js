@@ -38,6 +38,14 @@ async function main(){
   if(syncHits.length>=20)return res.status(429).json({error:'请求太频繁，请稍后再试'});
   syncHits.push(now);
   const b=req.body||{};const mode=['new','upsert','update'].includes(b.mode)?b.mode:'upsert';
+  // Report which Google login cookies arrived (names only). Without the rotating PSIDTS pair the
+  // session is normally rejected by Google on another machine, so refuse unless the user forces it.
+  const names=new Set((Array.isArray(b.state?.cookies)?b.state.cookies:[]).map(c=>c&&c.name).filter(n=>typeof n==='string'));
+  const KEY=['SID','HSID','SSID','APISID','SAPISID','__Secure-1PSID','__Secure-3PSID','__Secure-1PSIDTS','__Secure-3PSIDTS','__Secure-1PSIDCC','__Secure-3PSIDCC'];
+  const check={present:KEY.filter(n=>names.has(n)),missing:KEY.filter(n=>!names.has(n)),total:names.size};
+  const noTs=!names.has('__Secure-1PSIDTS')&&!names.has('__Secure-3PSIDTS');
+  if(b.mode==='check')return res.json({check,ok:!noTs});
+  if(noTs&&b.force!==true)return res.status(422).json({error:'缺少 __Secure-1PSIDTS / __Secure-3PSIDTS，导入后基本会被 Google 判定为登录失效，没有导入',check,needForce:true});
   try{
    const r=require('./import-ui').saveImport(system,b.state,{tier:b.tier,alias:typeof b.alias==='string'?b.alias:'',mode});
    let note='';
@@ -48,7 +56,7 @@ async function main(){
     const using=Object.entries(st.body?.slots||{}).filter(([,x])=>x&&x.account===r.index).map(([k])=>k);
     if(using.length)note=(note?note+'；':'')+'实例 '+using.join('/')+' 正在用这个账号，下次切换或重启实例后使用新 Cookie';
    }else await ctl('POST','/internal/sync-accounts',{});
-   res.json({...r,note});
+   res.json({...r,note,check});
   }catch(e){
    if(e.status)return res.status(e.status).json(e.body);
    console.error('[CookieSync] failed');res.status(500).json({error:'保存失败'});
