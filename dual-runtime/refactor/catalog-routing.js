@@ -32,6 +32,20 @@ class CatalogRouting {
   const policy=this.policies.get(request.upstreamId);
   if(!policy)throw Object.assign(Error("Explicit quota policy required for this model"),{statusCode:422});
   if(policy.quotaFamily==="ultra"&&!this.dispatch.pool.ids.some(id=>this.isUltra(id)&&!this.dispatch.accountFlags[id]))throw Object.assign(Error("This model needs an Ultra account; none is available in the account pool"),{statusCode:503});
+  if(policy.quotaFamily==="ultra"){
+   // Every Ultra account is cooling down for this model (Google said when it resets): answer now with 429
+   // and the reset time instead of holding the request in the queue until it times out.
+   const now=Date.now();let soonest=Infinity;
+   for(const id of this.dispatch.pool.ids){
+    if(!this.isUltra(id)||this.dispatch.accountFlags[id])continue;
+    const q=this.dispatch.quotas.view(id,request.upstreamId,'ultra');
+    soonest=Math.min(soonest,Math.max(q.cooldownUntil||0,this.dispatch.pool.cooldowns.get(id)||0));
+   }
+   if(soonest>now+120000&&soonest!==Infinity){
+    const at=new Date(soonest+8*3600000).toISOString().slice(0,16).replace('T',' ');
+    throw Object.assign(Error("All Ultra accounts are rate limited for "+request.upstreamId+" by Google; quota resets around "+at+" (Beijing time)"),{statusCode:429,retryAfter:Math.ceil((soonest-now)/1000)});
+   }
+  }
   if(request.antiTruncation && !policy.antiTruncation)
    throw Object.assign(Error("Anti-truncation unsupported for this model"),{statusCode:422});
   const eligible=(slot,account)=>(policy.quotaFamily!=="ultra"||this.isUltra(account))&&this.eligible(slot,account,request.upstreamId);

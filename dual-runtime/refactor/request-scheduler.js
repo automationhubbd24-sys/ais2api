@@ -96,7 +96,7 @@ class RequestScheduler {
    // account catalogs are temporarily unavailable. Keeping that demand in the
    // bounded queue lets recovery/rotation prepare a worker for this request.
    plan = this.resolveModel(route, body, { allowUnavailable: true });
-  } catch (error) { return this.fail(res, error.statusCode || 503, error.message); }
+  } catch (error) { if (error.retryAfter) try { res.setHeader('Retry-After', String(error.retryAfter)); } catch {} return this.fail(res, error.statusCode || 503, error.message); }
   const item = { id: randomUUID(), route, body, res, plan, attempts: 0,
    attemptedAccounts: new Set(), deadline: Date.now() + this.limits.queueTimeoutMs };
   item.remove = () => {
@@ -126,7 +126,8 @@ class RequestScheduler {
     } catch (error) {
      // Catalogs temporarily disappear while an account rotates. Preserve the
      // admitted request and its original deadline while waiting for readiness.
-     if ([400, 404, 422].includes(error.statusCode)) {
+     if ([400, 404, 422, 429].includes(error.statusCode)) {
+      if (error.retryAfter) try { item.res.setHeader('Retry-After', String(error.retryAfter)); } catch {}
       item.remove(); this.fail(item.res, error.statusCode, error.message);
      }
      continue;

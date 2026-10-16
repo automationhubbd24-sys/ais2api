@@ -26,6 +26,18 @@ function rejectionCooldown(result, now = Date.now()) {
     if (Number.isFinite(parsed)) delay = parsed - now;
   }
   if (!Number.isFinite(delay)) {
+    // Google states the wait in the body: "Please retry in 22h54m39.7s" or RetryInfo "retryDelay":"82479s".
+    const b = result.rejection?.body;
+    const text = Buffer.isBuffer(b) ? b.toString('utf8', 0, Math.min(b.length, 16384)) : String(b || '');
+    const m = text.match(/retry in\s+((?:\d+h)?(?:\d+m(?!s))?(?:[\d.]+s)?(?:[\d.]+ms)?)/i);
+    if (m && m[1]) {
+      const part = (re) => { const x = m[1].match(re); return x ? Number(x[1]) : 0; };
+      const ms = part(/(\d+)h/) * 3600000 + part(/(\d+)m(?!s)/) * 60000 + part(/([\d.]+)s/) * 1000 + part(/([\d.]+)ms/);
+      if (ms > 0) delay = ms;
+    }
+    if (!Number.isFinite(delay)) { const r = text.match(/"retryDelay"\s*:\s*"([\d.]+)s"/); if (r) delay = Number(r[1]) * 1000; }
+  }
+  if (!Number.isFinite(delay)) {
     const body = result.rejection?.body;
     const message = Buffer.isBuffer(body) ? body.toString('utf8') : '';
     // Generic RESOURCE_EXHAUSTED can be RPM/TPM. Only explicit daily/balance
