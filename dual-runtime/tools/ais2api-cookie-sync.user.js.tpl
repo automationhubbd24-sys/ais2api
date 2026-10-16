@@ -4,6 +4,11 @@
 // @version      1.0.0
 // @description  在 AI Studio 页面一键把当前 Google 登录状态导入 / 更新到 AIS2API 账号池，可开启自动同步
 // @match        https://aistudio.google.com/*
+// @match        https://accounts.google.com/*
+// @match        https://www.google.com/*
+// @match        https://myaccount.google.com/*
+// @match        https://ogs.google.com/*
+// @match        https://console.cloud.google.com/*
 // @run-at       document-idle
 // @grant        GM_cookie
 // @grant        GM_xmlhttpRequest
@@ -15,6 +20,8 @@
 // ==/UserScript==
 (function(){
 'use strict';
+// Other Google hosts are matched only so Tampermonkey grants cookie access; run on AI Studio only.
+if(location.hostname!=='aistudio.google.com')return;
 const SERVER=__SERVER__, KEY=__KEY__;
 const URLS=['https://aistudio.google.com/','https://accounts.google.com/','https://www.google.com/','https://myaccount.google.com/','https://ogs.google.com/','https://console.cloud.google.com/'];
 const SESSION=['SID','__Secure-1PSID','__Secure-3PSID'];
