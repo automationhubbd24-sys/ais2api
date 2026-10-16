@@ -145,7 +145,7 @@ async function sync(mode,quiet){
   if(quiet&&fp===GM_getValue('lastFp','')&&Date.now()-GM_getValue('lastAt',0)<30*60000)return;
   let {status,d}=await post(state,mode);
   if(status===422&&d.needForce){
-   if(quiet){console.warn('[AIS2API] 自动同步跳过：缺少 PSIDTS');return;}
+   if(quiet){console.warn('[AIS2API] 自动同步跳过：'+(d.error||''));return;}
    panel('没有导入',(d.error||'')+'\n\n'+report(d.check,diag));
    if(!confirm((d.error||'检查未通过')+'\n\n仍然导入吗？'))return;
    ({status,d}=await post(state,mode,true));
