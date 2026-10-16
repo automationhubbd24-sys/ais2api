@@ -1,0 +1,114 @@
+// ==UserScript==
+// @name         AIS2API Cookie 同步
+// @namespace    ais2api-cookie-sync
+// @version      1.0.0
+// @description  在 AI Studio 页面一键把当前 Google 登录状态导入 / 更新到 AIS2API 账号池，可开启自动同步
+// @match        https://aistudio.google.com/*
+// @run-at       document-idle
+// @grant        GM_cookie
+// @grant        GM_xmlhttpRequest
+// @grant        GM_registerMenuCommand
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @connect      __HOST__
+// @noframes
+// ==/UserScript==
+(function(){
+'use strict';
+const SERVER=__SERVER__, KEY=__KEY__;
+const URLS=['https://aistudio.google.com/','https://accounts.google.com/','https://www.google.com/','https://myaccount.google.com/','https://ogs.google.com/','https://console.cloud.google.com/'];
+const SESSION=['SID','__Secure-1PSID','__Secure-3PSID'];
+const cfg=()=>({tier:GM_getValue('tier','standard'),alias:GM_getValue('alias',''),auto:GM_getValue('auto',false),minutes:GM_getValue('minutes',10)});
+
+function toast(msg,bad){
+ const el=document.createElement('div');el.textContent=msg;
+ el.style.cssText='position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:360px;padding:10px 14px;border-radius:8px;font:13px/1.5 system-ui,sans-serif;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.25);white-space:pre-wrap;background:'+(bad?'#c62828':'#2e7d32');
+ document.body.appendChild(el);setTimeout(()=>el.remove(),bad?9000:5000);
+}
+function listCookies(url){
+ return new Promise(resolve=>{
+  try{GM_cookie.list({url},(list,err)=>resolve(err||!Array.isArray(list)?{err:String(err||'无返回')}:{list}));}
+  catch(e){resolve({err:String(e&&e.message||e)});}
+ });
+}
+async function collect(){
+ if(typeof GM_cookie==='undefined'||!GM_cookie.list)throw Error('当前脚本管理器不支持 GM_cookie，请使用 Tampermonkey');
+ const seen=new Map(),now=Date.now()/1000;let lastErr='';
+ for(const url of URLS){
+  const r=await listCookies(url);
+  if(r.err){lastErr=r.err;continue;}
+  for(const c of r.list){
+   if(!/^\.?([a-z0-9-]+\.)*google\.com$/i.test(c.domain||''))continue;
+   if(c.partitionKey!=null||c.partitioned)continue;
+   const expires=c.session||c.expirationDate==null?-1:Math.floor(c.expirationDate);
+   if(expires!==-1&&expires<=now)continue;
+   const ss=String(c.sameSite||'unspecified').toLowerCase();
+   let sameSite={lax:'Lax',strict:'Strict',none:'None',no_restriction:'None'}[ss]||'Lax';
+   if(sameSite==='None'&&!c.secure)sameSite='Lax';
+   const domain=c.hostOnly===false&&!c.domain.startsWith('.')?'.'+c.domain:c.domain;
+   const key=c.name+'|'+domain+'|'+(c.path||'/');
+   if(!seen.has(key))seen.set(key,{name:c.name,value:String(c.value),domain,path:c.path||'/',expires,httpOnly:!!c.httpOnly,secure:!!c.secure,sameSite});
+  }
+ }
+ const cookies=[...seen.values()].slice(0,200);
+ if(!cookies.some(c=>SESSION.includes(c.name))){
+  if(!cookies.some(c=>c.httpOnly))throw Error('读不到 HttpOnly Cookie。请在 Tampermonkey 设置 → 安全 → “允许脚本访问 Cookie”选“全部”'+(lastErr?'\n('+lastErr+')':''));
+  throw Error('没有找到 Google 登录 Cookie，请先登录');
+ }
+ const ls=[];
+ for(let i=0;i<localStorage.length&&ls.length<200;i++){
+  const name=localStorage.key(i),value=localStorage.getItem(name);
+  if(name&&name.length<=1024&&value!=null&&value.length<=65536)ls.push({name,value});
+ }
+ return {cookies,origins:[{origin:'https://aistudio.google.com',localStorage:ls}]};
+}
+function fingerprint(state){
+ return state.cookies.filter(c=>SESSION.concat(['__Secure-1PSIDTS','__Secure-3PSIDTS']).includes(c.name)).map(c=>c.name+'='+c.value).sort().join(';');
+}
+function post(body,mode){
+ const c=cfg();
+ return new Promise((resolve,reject)=>GM_xmlhttpRequest({
+  method:'POST',url:SERVER+'/api/cookie-sync',timeout:30000,anonymous:true,
+  headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
+  data:JSON.stringify({mode,tier:c.tier,alias:c.alias,state:body}),
+  onload:r=>{let d={};try{d=JSON.parse(r.responseText);}catch{}resolve({status:r.status,d});},
+  onerror:()=>reject(Error('无法连接服务器')),ontimeout:()=>reject(Error('连接服务器超时'))
+ }));
+}
+let running=false;
+async function sync(mode,quiet){
+ if(running)return;running=true;
+ try{
+  const state=await collect();
+  const fp=fingerprint(state);
+  if(quiet&&fp===GM_getValue('lastFp','')&&Date.now()-GM_getValue('lastAt',0)<30*60000)return;
+  const {status,d}=await post(state,mode);
+  if(status===200){
+   GM_setValue('lastFp',fp);GM_setValue('lastAt',Date.now());
+   const name=d.alias?' · '+d.alias:'';
+   if(!quiet||!d.updated)toast((d.updated?'已更新账号 #':'已导入新账号 #')+d.index+name+(d.tier==='ultra'?'（Ultra）':'')+(d.note?'\n'+d.note:''));
+   else console.info('[AIS2API] 已同步账号 #'+d.index);
+  }else if(quiet&&status===404){console.info('[AIS2API] 当前账号未导入，自动同步跳过');}
+  else toast('导入失败（'+status+'）：'+(d.error||'未知错误')+(d.detail?'\n'+d.detail:''),true);
+ }catch(e){if(!quiet)toast(e.message,true);else console.warn('[AIS2API]',e.message);}
+ finally{running=false;}
+}
+GM_registerMenuCommand('导入 / 更新当前账号',()=>sync('upsert',false));
+GM_registerMenuCommand('设置新账号的分类和名称',()=>{
+ const c=cfg();
+ const t=prompt('新账号分类：输入 ultra 或 standard（只影响新导入的账号，已导入的账号不改）',c.tier);
+ if(t===null)return;GM_setValue('tier',t.trim().toLowerCase()==='ultra'?'ultra':'standard');
+ const a=prompt('新账号名称（可留空，最多 40 字）',c.alias);
+ if(a!==null)GM_setValue('alias',a.trim().slice(0,40));
+ const n=cfg();toast('已保存：'+(n.tier==='ultra'?'Ultra':'普通')+(n.alias?' · '+n.alias:''));
+});
+GM_registerMenuCommand((cfg().auto?'关闭':'开启')+'自动同步（仅更新已导入账号）',()=>{
+ const on=!cfg().auto;GM_setValue('auto',on);
+ toast(on?'已开启自动同步：打开 AI Studio 时和每 '+cfg().minutes+' 分钟检查一次，Cookie 变了才上传。刷新页面后菜单文字会更新':'已关闭自动同步');
+ if(on)sync('update',true);
+});
+if(cfg().auto){
+ setTimeout(()=>sync('update',true),3000);
+ setInterval(()=>sync('update',true),Math.max(2,cfg().minutes)*60000);
+}
+})();

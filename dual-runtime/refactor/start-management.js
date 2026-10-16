@@ -24,6 +24,36 @@ async function main(){
  allowed.add('POST /api/prices');
  for(const name of require('./console-routes').assets)allowed.add('GET /console-assets/'+name);
  const outer=express();
+ // Userscript cookie sync: bearer key derived from the API key (never the API key itself).
+ // Mounted before the browser-session/origin middleware because it does not use cookies.
+ const syncKey=require('crypto').createHmac('sha256',String(system.config.apiKeys[0]||'')).update('ais2api-cookie-sync-v1').digest('hex');
+ const syncHits=[];
+ const ctl=createControlCall(system.config.apiKeys[0]);
+ outer.post('/api/cookie-sync',express.json({limit:'300kb'}),async(req,res)=>{
+  res.setHeader('Cache-Control','no-store');
+  const got=Buffer.from(String(req.get('authorization')||'').replace(/^Bearer\s+/i,''));
+  const want=Buffer.from(syncKey);
+  if(!system.config.apiKeys[0]||got.length!==want.length||!require('crypto').timingSafeEqual(got,want))return res.status(401).json({error:'同步密钥无效'});
+  const now=Date.now();while(syncHits.length&&now-syncHits[0]>60000)syncHits.shift();
+  if(syncHits.length>=20)return res.status(429).json({error:'请求太频繁，请稍后再试'});
+  syncHits.push(now);
+  const b=req.body||{};const mode=['new','upsert','update'].includes(b.mode)?b.mode:'upsert';
+  try{
+   const r=require('./import-ui').saveImport(system,b.state,{tier:b.tier,alias:typeof b.alias==='string'?b.alias:'',mode});
+   let note='';
+   if(r.updated){
+    const v=await ctl('POST','/internal/accounts/revalidate',{id:r.index});
+    if(v.status===200&&v.body?.revalidated)note='已解除该账号的“登录失效”标记';
+    const st=await ctl('GET','/internal/coordinator-status');
+    const using=Object.entries(st.body?.slots||{}).filter(([,x])=>x&&x.account===r.index).map(([k])=>k);
+    if(using.length)note=(note?note+'；':'')+'实例 '+using.join('/')+' 正在用这个账号，下次切换或重启实例后使用新 Cookie';
+   }else await ctl('POST','/internal/sync-accounts',{});
+   res.json({...r,note});
+  }catch(e){
+   if(e.status)return res.status(e.status).json(e.body);
+   console.error('[CookieSync] failed');res.status(500).json({error:'保存失败'});
+  }
+ });
  outer.use((req,res,next)=>{
   res.setHeader("X-Frame-Options","DENY");
   res.setHeader("X-Content-Type-Options","nosniff");
