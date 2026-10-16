@@ -92,4 +92,34 @@ class SpareKeepalive{
   try{d.checkpoint();}catch{d.halted=true;}
  }
 }
+// On-demand check after a cookie import: opens AI Studio with the account's cookies in an isolated
+// context of this slot's browser (main page untouched). Result decides the account flag either way.
+SpareKeepalive.prototype.verify=async function(id){
+ const d=this.dispatch,slot=this.slot;
+ if(this.running!==null||this.isStopping()||d.halted)return {result:'busy'};
+ if(d.pool.owners.has(id)||this.occupied(id))return {result:'in_use'};
+ const lease=d.operations.acquire(slot,'auth');if(!lease)return {result:'busy'};
+ this.running=id;
+ try{
+  let probe;try{probe=await this.client.status(slot,d.pool.slots.get(slot).current);}catch{return {result:'busy'};}
+  if(probe.keepaliveProtocol!==1||!probe.ready||probe.busy||probe.activeRequests!==0||probe.browserOperations!==0)return {result:'busy'};
+  const file=path.join(this.driver.authSource,'auth-'+id+'.json');
+  let original;try{original=readAuth(file);}catch{return {result:'auth_unreadable'};}
+  let res;
+  try{res=await this.request(this.client,slot,{account:id,expectedEpoch:probe.workerEpoch,state:{cookies:original.data.cookies,origins:original.data.origins}},130000);}
+  catch{res={result:'request_failed'};}
+  const result=RESULTS.has(res?.result)?res.result:(['busy','low_memory'].includes(res?.result)?res.result:'failed');
+  const rec={...this.record(id),keepaliveAttemptAt:this.now(),keepaliveResult:result,verifiedBy:'import'};
+  if(result==='ok'){
+   try{writeAuth(file,original,res.state);}catch{}
+   Object.assign(rec,{keepaliveAt:this.now()});
+   if(d.accountFlags[id]?.status==='invalid')delete d.accountFlags[id];
+   d.pool.cooldowns.delete(id);
+  }else if(result==='login_required'&&!d.pool.owners.has(id)&&!this.occupied(id)){
+   if(!d.accountFlags[id]||d.accountFlags[id].status==='invalid')d.accountFlags[id]={status:'invalid',reason:'login_required',at:this.now()};
+  }
+  if(!['busy','low_memory'].includes(result)){d.authSaves={...(d.authSaves||{}),[id]:rec};try{d.checkpoint();}catch{d.halted=true;}}
+  return {result};
+ }finally{this.running=null;d.operations.release(lease);try{this.scheduler.pump();}catch{}}
+};
 module.exports={SpareKeepalive,PERIOD,GAP};

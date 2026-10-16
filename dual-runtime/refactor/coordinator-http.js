@@ -113,6 +113,12 @@ function createServer({keys,models,scheduler,status,actions}){
     catch(e){const code=[400,409,413].includes(e.statusCode)?e.statusCode:503;
      return json(res,code,{error:code===503?'删除未确认，请刷新状态后核对':e.message});}
    }
+   if(url.pathname==='/internal/accounts/verify'){
+    try{
+     if(req.method==='GET')return json(res,200,actions.verifyStatus(url.searchParams.get('id')));
+     if(req.method==='POST')return json(res,202,actions.verifyAccount(await readBody()));
+    }catch(e){return json(res,e.statusCode===400?400:503,{error:e.message});}
+   }
    if(req.method==='POST' && url.pathname==='/internal/accounts/revalidate'){
     try{return json(res,200,await actions.revalidateAccount(await readBody()));}
     catch(e){const code=[400,409].includes(e.statusCode)?e.statusCode:503;return json(res,code,{error:code===503?'恢复未确认':e.message});}

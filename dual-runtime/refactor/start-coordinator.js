@@ -101,6 +101,7 @@ async function main(){
  const {AuthMaintenance}=require('./auth-maintenance');
  const authMaintenance=new AuthMaintenance({dispatch,driver,client,scheduler,isStopping:()=>stopping});
  const {SpareKeepalive}=require('./spare-keepalive');
+ const verifyJobs=new Map();
  const keepalive=new SpareKeepalive({dispatch,driver,client,scheduler,rotation,occupied:accountOccupied,isStopping:()=>stopping});
  const {BrowserLease}=require('./browser-lease');
  const browserLease=new BrowserLease({dispatch,driver,client,rotation,scheduler,isStopping:()=>stopping,file:path.join(root,'run-mode.json')});
@@ -144,6 +145,23 @@ async function main(){
    flag.status='deleted';flag.deletedAt=Date.now();dispatch.checkpoint();
    return {deleted:true,id,historyPreserved:true,retiredCopiesPreserved:true};
   },
+  verifyAccount(body){
+   const id=Number(body?.id);
+   if(!Number.isSafeInteger(id)||!dispatch.pool.ids.includes(id))throw Object.assign(Error('账号无效'),{statusCode:400});
+   const cur=verifyJobs.get(id);
+   if(cur&&cur.state==='running')return cur;
+   const job={id,state:'running',startedAt:Date.now(),attempts:0};verifyJobs.set(id,job);
+   const tryOnce=async()=>{
+    job.attempts++;
+    const r=await keepalive.verify(id).catch(()=>({result:'failed'}));
+    if(['busy','low_memory'].includes(r.result)&&job.attempts<20&&!stopping){job.waiting=r.result;setTimeout(tryOnce,15000);return;}
+    Object.assign(job,{state:'done',result:r.result,finishedAt:Date.now()});delete job.waiting;
+    console.log('[Verify] account',id,r.result);
+   };
+   tryOnce();
+   return job;
+  },
+  verifyStatus(id){const j=verifyJobs.get(Number(id));const f=dispatch.accountFlags[Number(id)];return {job:j||null,flag:f?f.status:null};},
   revalidateAccount(body){
    const id=body?.id,flag=dispatch.accountFlags[id];
    const error=(statusCode,message)=>Object.assign(Error(message),{statusCode});

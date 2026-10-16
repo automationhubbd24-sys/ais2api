@@ -54,20 +54,28 @@ async function main(){
    const r=require('./import-ui').saveImport(system,b.state,{tier:b.tier,alias:typeof b.alias==='string'?b.alias:'',mode});
    let note='';
    if(r.updated){
-    const v=await ctl('POST','/internal/accounts/revalidate',{id:r.index});
-    if(v.status===200&&v.body?.revalidated)note='已解除该账号的“登录失效”标记';
     const st=await ctl('GET','/internal/coordinator-status');
     const using=Object.entries(st.body?.slots||{}).filter(([,x])=>x&&x.account===r.index).map(([k])=>k);
     if(using.length)note=(note?note+'；':'')+'实例 '+using.join('/')+' 正在用这个账号，下次切换或重启实例后使用新 Cookie';
    }else await ctl('POST','/internal/sync-accounts',{});
+   // Real check: open AI Studio with these cookies (isolated context). Result arrives via /api/cookie-sync/verify.
+   let verifying=false;
+   if(!note.includes('正在用')){const v=await ctl('POST','/internal/accounts/verify',{id:r.index});verifying=v.status===202;}
    if(noTs)note=(note?note+'；':'')+'没有 __Secure-1PSIDTS，大多数账号仍可用，若启动时跳登录页请改用账号密码登录';
-   res.json({...r,note,check});
+   res.json({...r,note,check,verifying});
   }catch(e){
    if(e.status)return res.status(e.status).json(e.body);
    console.error('[CookieSync] failed');res.status(500).json({error:'保存失败'});
   }
  });
- outer.use((req,res,next)=>{
+  outer.get('/api/cookie-sync/verify',async(req,res)=>{
+  res.setHeader('Cache-Control','no-store');
+  const got=Buffer.from(String(req.get('authorization')||'').replace(/^Bearer\s+/i,'')),want=Buffer.from(syncKey);
+  if(got.length!==want.length||!require('crypto').timingSafeEqual(got,want))return res.status(401).json({error:'同步密钥无效'});
+  const id=Number(req.query.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'账号无效'});
+  const r=await ctl('GET','/internal/accounts/verify?id='+id);res.status(r.status).json(r.body);
+ });
+outer.use((req,res,next)=>{
   res.setHeader("X-Frame-Options","DENY");
   res.setHeader("X-Content-Type-Options","nosniff");
   if(req.method!=="POST")return next();

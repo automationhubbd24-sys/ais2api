@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AIS2API Cookie 同步
 // @namespace    ais2api-cookie-sync
-// @version      1.2.0
+// @version      1.3.0
 // @description  在 AI Studio 页面一键把当前 Google 登录状态导入 / 更新到 AIS2API 账号池；可检查 Cookie 是否完整
 // @match        https://aistudio.google.com/*
 // @match        https://accounts.google.com/*
@@ -126,6 +126,27 @@ function report(check,diag){
   lines.push('','说明：脚本按网址、按名称都查过，浏览器没有给出 PSIDTS。');
  return lines.join('\n');
 }
+// Poll the server-side login check started by the import (it opens AI Studio with these cookies).
+function getJSON(url){
+ return new Promise(resolve=>GM_xmlhttpRequest({method:'GET',url,timeout:20000,anonymous:true,headers:{'Authorization':'Bearer '+KEY},
+  onload:r=>{let d={};try{d=JSON.parse(r.responseText);}catch{}resolve({status:r.status,d});},onerror:()=>resolve({status:0,d:{}}),ontimeout:()=>resolve({status:0,d:{}})}));
+}
+async function waitVerify(id){
+ const until=Date.now()+8*60000;
+ setStatus('账号 #'+id+'：服务器验证中…');
+ while(Date.now()<until){
+  await new Promise(r=>setTimeout(r,8000));
+  const {status,d}=await getJSON(SERVER+'/api/cookie-sync/verify?id='+id);
+  if(status!==200||!d.job)continue;
+  if(d.job.state!=='done'){setStatus('账号 #'+id+'：服务器验证中'+(d.job.waiting?'（实例忙，排队中）':'')+'…');continue;}
+  const r=d.job.result;
+  const msg={ok:'可用 ✓ 登录有效',login_required:'不可用：服务器打开 AI Studio 时被跳到 Google 登录页，这份登录在服务器上无效',region_blocked:'不可用：所在地区不支持 AI Studio',proxy_error:'无法判断：服务器网络/代理出错，稍后重试',timeout:'无法判断：打开页面超时，稍后重试',unexpected_page:'无法判断：打开后不是 AI Studio 页面',in_use:'跳过：这个账号正在被实例使用',no_cookies:'不可用：打开后没有登录 Cookie'}[r]||('结果：'+r);
+  setStatus('账号 #'+id+'：'+msg);
+  toast('账号 #'+id+' '+msg,r!=='ok');
+  return;
+ }
+ setStatus('账号 #'+id+'：验证超时，请稍后在管理后台查看');
+}
 let running=false;
 async function sync(mode,quiet){
  if(running)return;running=true;
@@ -153,13 +174,34 @@ async function sync(mode,quiet){
   if(status===200){
    GM_setValue('lastFp',fp);GM_setValue('lastAt',Date.now());
    const name=d.alias?' · '+d.alias:'';
-   if(!quiet||!d.updated)toast((d.updated?'已更新账号 #':'已导入新账号 #')+d.index+name+(d.tier==='ultra'?'（Ultra）':'（普通）')+(d.note?'\n'+d.note:''));
+   if(!quiet||!d.updated)toast((d.updated?'已更新账号 #':'已导入新账号 #')+d.index+name+(d.tier==='ultra'?'（Ultra）':'（普通）')+(d.note?'\n'+d.note:'')+(d.verifying?'\n正在服务器上验证登录，约 30 秒～几分钟…':''));
+   if(d.verifying&&!quiet)waitVerify(d.index);
    else console.info('[AIS2API] 已同步账号 #'+d.index);
   }else if(quiet&&status===404){console.info('[AIS2API] 当前账号未导入，自动同步跳过');}
   else toast('导入失败（'+status+'）：'+(d.error||'未知错误')+(d.detail?'\n'+d.detail:''),true);
  }catch(e){if(!quiet)toast(e.message,true);else console.warn('[AIS2API]',e.message);}
  finally{running=false;}
 }
+let statusEl=null;
+function setStatus(t){if(statusEl){statusEl.textContent=t;statusEl.style.display=t?'block':'none';}}
+// Floating buttons on the page (Tampermonkey menus are hard to reach on mobile). Can be collapsed.
+function initButtons(){
+ if(document.getElementById('ais2api-bar'))return;
+ const bar=document.createElement('div');bar.id='ais2api-bar';
+ bar.style.cssText='position:fixed;z-index:2147483646;right:8px;bottom:24px;background:#fff;border:1px solid #aaa;border-radius:10px;padding:6px;display:flex;flex-wrap:wrap;gap:6px;max-width:94vw;font:13px system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.2)';
+ const mk=(label,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.style.cssText='font:13px system-ui;padding:8px 10px;color:#111;background:#eee;border:1px solid #bbb;border-radius:6px';b.onclick=fn;return b;};
+ const body=document.createElement('div');body.style.cssText='display:flex;flex-wrap:wrap;gap:6px;align-items:center';
+ const tierBtn=mk('',()=>{GM_setValue('tier',cfg().tier==='ultra'?'standard':'ultra');paint();});
+ const paint=()=>{tierBtn.textContent='分类：'+(cfg().tier==='ultra'?'Ultra':'普通');tierBtn.style.background=cfg().tier==='ultra'?'#ffe082':'#eee';};paint();
+ body.append(mk('检查',()=>sync('check',false)),mk('导入',()=>sync('upsert',false)),tierBtn,
+  mk('名称',()=>{const a=prompt('新账号名称（可留空，最多 40 字）',cfg().alias);if(a!==null){GM_setValue('alias',a.trim().slice(0,40));toast('名称：'+(cfg().alias||'（空）'));}}));
+ const fold=mk('AIS',()=>{const hide=body.style.display!=='none';body.style.display=hide?'none':'flex';GM_setValue('folded',hide);});
+ statusEl=document.createElement('div');statusEl.style.cssText='flex-basis:100%;display:none;font-size:12px;color:#333;max-width:320px';
+ bar.append(fold,body,statusEl);
+ if(GM_getValue('folded',false))body.style.display='none';
+ document.body.appendChild(bar);
+}
+if(document.body)initButtons();else window.addEventListener('DOMContentLoaded',initButtons,{once:true});
 GM_registerMenuCommand('检查 Cookie（不导入）',()=>sync('check',false));
 GM_registerMenuCommand('导入 / 更新当前账号',()=>sync('upsert',false));
 GM_registerMenuCommand('设置新账号的分类和名称（当前：'+(cfg().tier==='ultra'?'Ultra':'普通')+'）',()=>{
