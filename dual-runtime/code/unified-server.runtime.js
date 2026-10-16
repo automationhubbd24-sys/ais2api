@@ -387,6 +387,137 @@ class BrowserManager {
         );
       }
       this.page = await this.context.newPage();
+      // ---- GenerateContent bridge: Google rejects POST via ProxyUnaryCall/ProxyStreamedCall; call MakerSuite GenerateContent directly ----
+      {
+        const GCB_INSTALL = `(function(){var M=window.default_MakerSuite;if(!M||!M.Cn||!M.GB)return 'nom';
+if(!M.Cn.__gcb){var o=M.Cn;var f=function(a,b){if(a&&a.mb)window.__tb=a;return o.apply(this,arguments)};f.__gcb=1;M.Cn=f;}
+if(!window.__gcCall){window.__gcCall=async function(body,ht){var M=window.default_MakerSuite,tb=window.__tb;if(!tb)return JSON.stringify({s:503,t:'[14,"token service not ready"]'});
+body[4]=await M.Cn(tb,await M.GB(ht));var mb=tb.mb,md=tb.getMetadata();
+var r=await fetch(mb.F+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent',{method:'POST',credentials:'include',headers:{'content-type':'application/json+protobuf','x-user-agent':'grpc-web-javascript/0.1','x-goog-api-key':mb.jK,'authorization':md.Authorization,'x-goog-authuser':String(mb.Ml)},body:JSON.stringify(body)});
+return JSON.stringify({s:r.status,t:await r.text()});};}
+return window.__tb?'ok':'wait';})()`;
+        const pg = this.page, log = this.logger;
+        const gcbInstall = () => pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_INSTALL).catch(() => 'err');
+        const gcbTimer = setInterval(() => { if (pg.isClosed()) return clearInterval(gcbTimer); gcbInstall(); }, 3000);
+        const CAT = { HARM_CATEGORY_HARASSMENT: 7, HARM_CATEGORY_HATE_SPEECH: 8, HARM_CATEGORY_SEXUALLY_EXPLICIT: 9, HARM_CATEGORY_DANGEROUS_CONTENT: 10, HARM_CATEGORY_CIVIC_INTEGRITY: 11 };
+        const THR = { BLOCK_LOW_AND_ABOVE: 1, BLOCK_MEDIUM_AND_ABOVE: 2, BLOCK_ONLY_HIGH: 3, BLOCK_NONE: 4, OFF: 5 };
+        const FIN = { 1: 'STOP', 2: 'MAX_TOKENS', 3: 'SAFETY', 4: 'RECITATION', 5: 'OTHER' };
+        const encVal = v => { if (v === null || v === undefined) return [0]; if (typeof v === 'number') return [null, v]; if (typeof v === 'string') return [null, null, v]; if (typeof v === 'boolean') return [null, null, null, v]; if (Array.isArray(v)) return [null, null, null, null, null, [v.map(encVal)]]; return [null, null, null, null, encStruct(v)]; };
+        const encStruct = o => [Object.entries(o || {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, encVal(v)])];
+        const decVal = v => { if (!Array.isArray(v)) return null; if (v[1] != null) return v[1]; if (v[2] != null) return v[2]; if (v[3] != null) return !!v[3]; if (v[4] != null) return decStruct(v[4]); if (v[5] != null) return ((v[5] && v[5][0]) || []).map(decVal); return null; };
+        const decStruct = st => { const o = {}; for (const kv of ((st && st[0]) || [])) if (Array.isArray(kv)) o[kv[0]] = decVal(kv[1]); return o; };
+        const TYP = { string: 1, number: 2, integer: 3, boolean: 4, array: 5, object: 6 };
+        const encSchema = sc => { if (!sc || typeof sc !== 'object') return null; const a = [];
+          a[0] = TYP[String(sc.type || 'object').toLowerCase()] || 6;
+          if (sc.format) a[1] = sc.format; if (sc.description) a[2] = sc.description; if (sc.nullable != null) a[3] = !!sc.nullable;
+          if (Array.isArray(sc.enum)) a[4] = sc.enum.map(String); if (sc.items) a[5] = encSchema(sc.items);
+          if (sc.properties) a[6] = Object.entries(sc.properties).map(([k, v]) => [k, encSchema(v)]);
+          if (Array.isArray(sc.required)) a[7] = sc.required;
+          for (let i = 0; i < a.length; i++) if (a[i] === undefined) a[i] = null; return a; };
+        const encTools = tools => { const decls = []; for (const t of (tools || [])) for (const d of (t.functionDeclarations || t.function_declarations || [])) { const x = [d.name, d.description || null]; const ps = d.parameters || d.parametersJsonSchema; if (ps) x[2] = encSchema(ps); decls.push(x); } return decls.length ? [[null, decls]] : null; };
+        const toPart = p => {
+          if (p == null) return null;
+          const a = []; const d = p.inlineData || p.inline_data; const fc = p.functionCall || p.function_call; const fr = p.functionResponse || p.function_response;
+          if (typeof p.text === 'string') a[1] = p.text;
+          else if (d) a[2] = [d.mimeType || d.mime_type, d.data];
+          else if (fc) a[10] = [fc.name, encStruct(fc.args || {}), fc.id || null];
+          else if (fr) a[11] = [fr.name, encStruct(fr.response || {}), fr.id || null];
+          else return null;
+          if (p.thought) a[12] = true; const sg = p.thoughtSignature || p.thought_signature; if (sg) a[14] = sg;
+          for (let i = 0; i < a.length; i++) if (a[i] === undefined) a[i] = null; return a;
+        };
+        const toContent = c => [(c.parts || []).map(toPart).filter(Boolean), c.role === 'model' ? 'model' : 'user'];
+        const buildBody = (model, g) => {
+          const gc = g.generationConfig || g.generation_config || {};
+          const tc = gc.thinkingConfig || gc.thinking_config || {};
+          const cfg = [];
+          if (Array.isArray(gc.stopSequences)) cfg[1] = gc.stopSequences;
+          cfg[3] = gc.maxOutputTokens || 65536;
+          cfg[4] = gc.temperature != null ? gc.temperature : 1;
+          cfg[5] = gc.topP != null ? gc.topP : 0.95;
+          cfg[6] = gc.topK != null ? gc.topK : 64;
+          if (gc.responseMimeType) cfg[7] = gc.responseMimeType;
+          cfg[13] = 1;
+          const th = [];
+          th[0] = tc.includeThoughts === false ? 0 : 1;
+          if (typeof tc.thinkingBudget === 'number') th[1] = tc.thinkingBudget;
+          const lv = String(tc.thinkingLevel || '').toLowerCase();
+          if (lv === 'low') th[3] = 1; else if (lv === 'high') th[3] = 2; else if (th[1] == null) th[3] = 2;
+          cfg[16] = th;
+          for (let i = 0; i < cfg.length; i++) if (cfg[i] === undefined) cfg[i] = null;
+          for (let i = 0; i < th.length; i++) if (th[i] === undefined) th[i] = null;
+          let safety = [7, 8, 9, 10].map(c => [null, null, c, 5]);
+          if (Array.isArray(g.safetySettings) && g.safetySettings.length) safety = g.safetySettings.map(s => [null, null, CAT[s.category] || 7, THR[s.threshold] || 5]);
+          const contents = (g.contents || []).map(toContent).filter(c => c[0].length);
+          const si = g.systemInstruction || g.system_instruction;
+          const sys = si && (si.parts || []).length ? [(si.parts || []).map(toPart).filter(Boolean), 'user'] : null;
+          const body = ['models/' + model, contents, safety, cfg, null, sys, encTools(g.tools), null, null, null, 1, null, null, [[null, null, 'UTC']]];
+          const ht = contents.flatMap(c => c[0]).map(p => p[1] != null ? p[1] : (p[2] ? p[2][1] : '')).filter(x => x).join(' ');
+          return { body, ht };
+        };
+        const convChunk = m => {
+          if (!Array.isArray(m) || !Array.isArray(m[0])) return null;
+          const out = { candidates: m[0].map((c, i) => {
+            const parts = (Array.isArray(c && c[0] && c[0][0]) ? c[0][0] : []).map(p => {
+              if (!p) return null; const o = {};
+              if (typeof p[1] === 'string') o.text = p[1];
+              if (Array.isArray(p[2])) o.inlineData = { mimeType: p[2][0], data: p[2][1] }; if (Array.isArray(p[10])) { o.functionCall = { name: p[10][0], args: decStruct(p[10][1]) }; if (p[10][2]) o.functionCall.id = p[10][2]; }
+              if (p[12] === 1 || p[12] === true) o.thought = true;
+              if (typeof p[14] === 'string' && p[14]) o.thoughtSignature = p[14];
+              return Object.keys(o).length ? o : null;
+            }).filter(Boolean);
+            const cand = { content: { parts, role: 'model' }, index: i };
+            if (c && c[1]) cand.finishReason = FIN[c[1]] || 'OTHER';
+            return cand;
+          }) };
+          const u = m[2];
+          if (Array.isArray(u)) out.usageMetadata = { promptTokenCount: u[0] || 0, candidatesTokenCount: u[1] || 0, totalTokenCount: u[2] || 0, thoughtsTokenCount: u[9] || 0 };
+          if (typeof m[7] === 'string') out.responseId = m[7];
+          return out;
+        };
+        const merge = chunks => {
+          const parts = []; let fin, usage, rid;
+          for (const ch of chunks) {
+            const c = ch.candidates && ch.candidates[0];
+            if (c) { if (c.finishReason) fin = c.finishReason;
+              for (const p of c.content.parts) {
+                const last = parts[parts.length - 1];
+                if (p.text != null && last && last.text != null && !!last.thought === !!p.thought && !last.thoughtSignature) { last.text += p.text; if (p.thoughtSignature) last.thoughtSignature = p.thoughtSignature; }
+                else if (p.text === '' && p.thoughtSignature && last) last.thoughtSignature = p.thoughtSignature;
+                else parts.push({ ...p });
+              } }
+            if (ch.usageMetadata) usage = ch.usageMetadata; if (ch.responseId) rid = ch.responseId;
+          }
+          const r = { candidates: [{ content: { parts, role: 'model' }, finishReason: fin || 'STOP', index: 0 }] };
+          if (usage) r.usageMetadata = usage; if (rid) r.responseId = rid; return r;
+        };
+        await this.context.route(/MakerSuiteService\/Proxy(Unary|Streamed)Call/, async route => {
+          const req = route.request(); let a = null;
+          try { a = JSON.parse(req.postData() || ''); } catch {}
+          const mm = Array.isArray(a) && typeof a[0] === 'string' && a[0].match(/models\/([^:/?]+):(stream)?generateContent/i);
+          if (!mm) return route.continue();
+          const streamed = /ProxyStreamedCall/.test(req.url());
+          try {
+            const g = JSON.parse(a[1] || '{}');
+            const { body, ht } = buildBody(mm[1], g);
+            await gcbInstall();
+            const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ')';
+            const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise((_, rj) => setTimeout(() => rj(new Error('GenerateContent timeout')), 600000))]);
+            const r = JSON.parse(raw);
+            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
+            const arr0 = JSON.parse(r.t); const isChunk = x => Array.isArray(x) && Array.isArray(x[0]) && Array.isArray(x[0][0]) && Array.isArray(x[0][0][0]) && x[0][0][0][1] === 'model'; const arr = Array.isArray(arr0) && arr0.some(isChunk) ? arr0 : (Array.isArray(arr0) && Array.isArray(arr0[0]) ? arr0[0] : []);
+            const chunks = arr.map(convChunk).filter(c => c && c.candidates && c.candidates.length);
+            let out;
+            if (streamed) { const tail = arr.length && !isChunk(arr[arr.length - 1]) ? arr[arr.length - 1] : null; out = '[[' + chunks.map(c => JSON.stringify([JSON.stringify(c)])).concat(tail ? [JSON.stringify(tail)] : []).join(',') + ']]'; }
+            else out = JSON.stringify([JSON.stringify(merge(chunks))]);
+            log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length);
+            return route.fulfill({ status: 200, contentType: 'application/json+protobuf; charset=UTF-8', body: out });
+          } catch (e) {
+            log.warn('[GCBridge] error ' + e.message);
+            return route.fulfill({ status: 500, contentType: 'application/json+protobuf; charset=UTF-8', body: JSON.stringify([13, 'GCBridge: ' + e.message]) });
+          }
+        });
+      }
       if (process.env.WORKER_ACCOUNT || process.env.CLIENT_SCRIPT_OBSERVE === '1') {
         const stopObservation = require('./observe-client-scripts').observe(this.page, record => {
           this.logger.info('[ClientScriptObservation] ' + JSON.stringify(record));
