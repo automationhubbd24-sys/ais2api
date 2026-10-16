@@ -391,12 +391,17 @@ class BrowserManager {
       {
         const GCB_INSTALL = `(function(){var M=window.default_MakerSuite;if(!M||!M.Cn||!M.GB)return 'nom';
 if(!M.Cn.__gcb){var o=M.Cn;var f=function(a,b){if(a&&a.mb)window.__tb=a;return o.apply(this,arguments)};f.__gcb=1;M.Cn=f;}
-if(!window.__gcCall){window.__gcCall=async function(body,ht){var M=window.default_MakerSuite,tb=window.__tb;if(!tb)return JSON.stringify({s:503,t:'[14,"token service not ready"]'});
-body[4]=await M.Cn(tb,await M.GB(ht));var mb=tb.mb,md=tb.getMetadata();
-var r=await fetch(mb.F+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent',{method:'POST',credentials:'include',headers:{'content-type':'application/json+protobuf','x-user-agent':'grpc-web-javascript/0.1','x-goog-api-key':mb.jK,'authorization':md.Authorization,'x-goog-authuser':String(mb.Ml)},body:JSON.stringify(body)});
-return JSON.stringify({s:r.status,t:await r.text()});};}
+if(!window.__gcCall||window.__gcCall.v!==2){window.__gcCall=async function(body,ht,key){var M=window.default_MakerSuite,tb=window.__tb;if(!tb)return JSON.stringify({s:503,t:'[14,"token service not ready"]'});
+var md=tb.getMetadata()||{};var waa=md['X-Goog-Api-Key'];if(!key){var mb=tb.mb||{};for(var k in mb){var v=mb[k];if(typeof v==='string'&&/^AIza[0-9A-Za-z_-]{30,}$/.test(v)&&v!==waa){key=v;break;}}}
+if(!key)return JSON.stringify({s:503,t:'[14,"page api key not found"]'});
+var base='https://alkalimakersuite-pa.clients6.google.com';var au=md['X-Goog-AuthUser']!=null?String(md['X-Goog-AuthUser']):'0';
+body[4]=await M.Cn(tb,await M.GB(ht));
+var r=await fetch(base+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent',{method:'POST',credentials:'include',headers:{'content-type':'application/json+protobuf','x-user-agent':'grpc-web-javascript/0.1','x-goog-api-key':key,'authorization':md.Authorization,'x-goog-authuser':au},body:JSON.stringify(body)});
+return JSON.stringify({s:r.status,t:await r.text()});};window.__gcCall.v=2;}
 return window.__tb?'ok':'wait';})()`;
         const pg = this.page, log = this.logger;
+        global.__gcbPage = pg; let gcbKey = null; const gcbWaa = 'AIzaSyBGb5fGAyC-pRcRU6MUHb__b_vKha71HRE';
+        this.context.on('request', r => { try { if (!/alkalimakersuite-pa\.clients6\.google\.com\/\$rpc\/.*MakerSuiteService\//.test(r.url())) return; const k = r.headers()['x-goog-api-key']; if (k && k !== gcbWaa && /^AIza/.test(k)) gcbKey = k; } catch {} });
         const gcbInstall = () => pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_INSTALL).catch(() => 'err');
         const gcbTimer = setInterval(() => { if (pg.isClosed()) return clearInterval(gcbTimer); gcbInstall(); }, 3000);
         const CAT = { HARM_CATEGORY_HARASSMENT: 7, HARM_CATEGORY_HATE_SPEECH: 8, HARM_CATEGORY_SEXUALLY_EXPLICIT: 9, HARM_CATEGORY_DANGEROUS_CONTENT: 10, HARM_CATEGORY_CIVIC_INTEGRITY: 11 };
@@ -423,7 +428,7 @@ return window.__tb?'ok':'wait';})()`;
           else if (fc) a[10] = [fc.name, encStruct(fc.args || {}), fc.id || null];
           else if (fr) a[11] = [fr.name, encStruct(fr.response || {}), fr.id || null];
           else return null;
-          if (p.thought) a[12] = true; const sg = p.thoughtSignature || p.thought_signature; if (sg) a[14] = sg;
+          if (p.thought) a[12] = true; const sg = p.thoughtSignature || p.thought_signature; if (sg) a[14] = sg; else if (fc && !p.text) a[14] = 'skip_thought_signature_validator';
           for (let i = 0; i < a.length; i++) if (a[i] === undefined) a[i] = null; return a;
         };
         const toContent = c => [(c.parts || []).map(toPart).filter(Boolean), c.role === 'model' ? 'model' : 'user'];
@@ -452,7 +457,7 @@ return window.__tb?'ok':'wait';})()`;
           const si = g.systemInstruction || g.system_instruction;
           const sys = si && (si.parts || []).length ? [(si.parts || []).map(toPart).filter(Boolean), 'user'] : null;
           const body = ['models/' + model, contents, safety, cfg, null, sys, encTools(g.tools), null, null, null, 1, null, null, [[null, null, 'UTC']]];
-          const ht = contents.flatMap(c => c[0]).map(p => p[1] != null ? p[1] : (p[2] ? p[2][1] : '')).filter(x => x).join(' ');
+          const ht = contents.flatMap(c => c[0]).map(p => p[1] != null ? p[1] : (p[2] ? p[2][1] : '')).join(' ');
           return { body, ht };
         };
         const convChunk = m => {
@@ -501,7 +506,7 @@ return window.__tb?'ok':'wait';})()`;
             const g = JSON.parse(a[1] || '{}');
             const { body, ht } = buildBody(mm[1], g);
             await gcbInstall();
-            const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ')';
+            const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ',' + JSON.stringify(gcbKey) + ')';
             const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise((_, rj) => setTimeout(() => rj(new Error('GenerateContent timeout')), 600000))]);
             const r = JSON.parse(raw);
             if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
@@ -1760,12 +1765,14 @@ class RequestHandler {
           } else {
             let mainContent = "";
             let reasoningContent = "";
-
+            const oaiToolCalls = [];
             candidate.content.parts.forEach((p) => {
-              if (p.thought) {
-                reasoningContent += p.text;
+              if (p.functionCall) {
+                oaiToolCalls.push({ id: p.functionCall.id || ("call_" + Math.random().toString(36).slice(2, 12)), type: "function", function: { name: p.functionCall.name, arguments: JSON.stringify(p.functionCall.args || {}) } });
+              } else if (p.thought) {
+                reasoningContent += p.text || "";
               } else {
-                mainContent += p.text;
+                mainContent += p.text || "";
               }
             });
 
@@ -1780,6 +1787,7 @@ class RequestHandler {
             if (reasoningContent) {
               messageObj.reasoning_content = reasoningContent;
             }
+            if (oaiToolCalls.length) { messageObj.tool_calls = oaiToolCalls; if (!messageObj.content) messageObj.content = null; }
           }
         }
 
@@ -1794,7 +1802,7 @@ class RequestHandler {
               index: 0,
               // 使用上面构建的 messageObj
               message: messageObj || { role: "assistant", content: "" },
-              finish_reason: candidate?.finishReason,
+              finish_reason: (messageObj && messageObj.tool_calls) ? "tool_calls" : candidate?.finishReason,
             },
           ],
         };
@@ -2387,7 +2395,19 @@ class RequestHandler {
     const conversationMessages = openaiBody.messages.filter(
       (msg) => msg.role !== "system",
     );
+    const oaiToolNames = {};
+    for (const m of conversationMessages) for (const tc of (m.tool_calls || [])) if (tc && tc.id && tc.function) oaiToolNames[tc.id] = tc.function.name;
     for (const message of conversationMessages) {
+      if (message.role === "tool" || message.role === "function") {
+        let resp = message.content; if (Array.isArray(resp)) resp = resp.map(x => x && x.text || "").join("");
+        try { resp = JSON.parse(resp); } catch {}
+        if (resp === null || typeof resp !== "object" || Array.isArray(resp)) resp = { result: resp };
+        const frPart = { functionResponse: { name: message.name || oaiToolNames[message.tool_call_id] || "tool", response: resp } };
+        const prev = googleContents[googleContents.length - 1];
+        if (prev && prev.role === "user" && prev.parts.length && prev.parts.every(x => x.functionResponse)) prev.parts.push(frPart);
+        else googleContents.push({ role: "user", parts: [frPart] });
+        continue;
+      }
       const googleParts = [];
 
       // [核心改进] 判断 content 是字符串还是数组
@@ -2415,6 +2435,14 @@ class RequestHandler {
         }
       }
 
+      if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
+        for (let i = googleParts.length - 1; i >= 0; i--) if (googleParts[i].text === "") googleParts.splice(i, 1);
+        for (const tc of message.tool_calls) {
+          if (!tc || !tc.function) continue;
+          let args = tc.function.arguments; try { args = typeof args === "string" ? JSON.parse(args || "{}") : (args || {}); } catch { args = {}; }
+          googleParts.push({ functionCall: { name: tc.function.name, args } });
+        }
+      }
       googleContents.push({
         role: message.role === "assistant" ? "model" : "user",
         parts: googleParts,
@@ -2499,7 +2527,12 @@ class RequestHandler {
     }
 
     googleRequest.generationConfig = generationConfig;
-
+    const oaiTools = (openaiBody.tools || []).filter(t => t && t.type === "function" && t.function).map(t => ({ name: t.function.name, description: t.function.description || "", ...(t.function.parameters ? { parameters: t.function.parameters } : {}) }));
+    if (Array.isArray(openaiBody.functions)) for (const f of openaiBody.functions) if (f && f.name) oaiTools.push({ name: f.name, description: f.description || "", ...(f.parameters ? { parameters: f.parameters } : {}) });
+    if (oaiTools.length) {
+      googleRequest.tools = [{ functionDeclarations: oaiTools }];
+      this.logger.info(`[Adapter] 已转换 ${oaiTools.length} 个工具定义。`);
+    }
     // 5. 安全设置
     googleRequest.safetySettings = [
       { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
@@ -2584,6 +2617,11 @@ class RequestHandler {
         let reasoningAccumulator = "";
 
         for (const part of candidate.content.parts) {
+          if (part.functionCall) {
+            delta.tool_calls = delta.tool_calls || [];
+            delta.tool_calls.push({ index: delta.tool_calls.length, id: part.functionCall.id || ("call_" + Math.random().toString(36).slice(2, 12)), type: "function", function: { name: part.functionCall.name, arguments: JSON.stringify(part.functionCall.args || {}) } });
+            continue;
+          }
           // Google API 的 thought 标记
           if (part.thought === true) {
             reasoningAccumulator += part.text || "";
@@ -2603,7 +2641,7 @@ class RequestHandler {
     }
 
     // 如果没有任何内容变更，则不返回数据（避免空行）
-    if (!delta.content && !delta.reasoning_content && !candidate.finishReason && !hasUsage) {
+    if (!delta.content && !delta.reasoning_content && !delta.tool_calls && !candidate.finishReason && !hasUsage) {
       return null;
     }
 
@@ -2617,7 +2655,7 @@ class RequestHandler {
         {
           index: 0,
           delta: delta, // 使用包含 reasoning_content 的 delta
-          finish_reason: candidate.finishReason || null,
+          finish_reason: delta.tool_calls ? "tool_calls" : (candidate.finishReason || null),
         },
       ],
     };
