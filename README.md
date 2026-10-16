@@ -11,6 +11,8 @@ Dual-worker AI Studio proxy with OpenAI-compatible responses and an authenticate
 - Native usage metadata is retained through OpenAI stream/non-stream conversion. Missing counts remain unknown.
 - A received stream terminator is distinguished from an unconfirmed HTTP transport close. Worker settlement still requires execution-ledger evidence.
 
+## AI Studio app
+Workers run the client script inside an AI Studio app owned by your own Google account. See [docs/BUILD-APP.md](docs/BUILD-APP.md) for creating, sharing and switching the app.
 ## Private runtime data
 Account credentials, environment files, coordinator configuration, quota/execution state, request history, model policies and price configuration are local deployment data and must not be committed. Model policies and prices require explicit configuration on a new installation; they are not reconstructed from repository history.
 
