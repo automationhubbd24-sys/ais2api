@@ -255,7 +255,8 @@ test('Retry-After and explicit exhaustion are bounded without treating every 429
  assert.equal(rejectionCooldown(rejected(429, '', '999999999999'), now).until, now + 86400000);
  const daily = rejected(429, '{"error":{"message":"GenerateContent requests per day exceeded"}}', undefined);
  delete daily.retryAfter;
- assert.equal(rejectionCooldown(daily, now).until, now + 86400000);
+ // Daily exhaustion without an explicit wait cools down until the next 15:00 Beijing (07:00 UTC) reset.
+ assert.equal(rejectionCooldown(daily, now).until, Date.parse('2023-11-15T07:00:00Z'));
  assert.equal(rejectionCooldown({ status: 429 }, now).until, now + 60000);
  assert.equal(rejectionCooldown({ status: 403 }, now).scope, 'model');
  assert.equal(rejectionCooldown({ status: 401 }, now).scope, 'account');

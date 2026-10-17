@@ -31,11 +31,23 @@ test('canonical IDs required; aliases cannot create another balance',()=>{
  q.charge(4,'gemini-3.8-flash','flash');
  assert.equal(q.view(4,'gemini-3.8-flash','flash').used,1);
 });
-test('24h account window retained; expiry does not erase evidence on read',()=>{
+test('quota resets daily at 15:00 Beijing (07:00 UTC), not 24h after first use',()=>{
+ const {periodStart}=require('./model-quota-ledger');
+ let now=Date.parse('2026-10-17T14:30:00+08:00');const q=new ModelQuotaLedger(undefined,()=>now);
+ q.charge(5,'gemini-3.8-flash','flash');q.charge(5,'gemini-3.8-flash','flash');
+ assert.equal(q.view(5,'gemini-3.8-flash','flash').windowEnd,Date.parse('2026-10-17T15:00:00+08:00'));
+ now=Date.parse('2026-10-17T14:59:59+08:00');assert.equal(q.view(5,'gemini-3.8-flash','flash').used,2);
+ now=Date.parse('2026-10-17T15:00:00+08:00');assert.equal(q.view(5,'gemini-3.8-flash','flash').used,0);
+ q.charge(5,'gemini-3.8-flash','flash');
+ now=Date.parse('2026-10-18T14:59:59+08:00');assert.equal(q.view(5,'gemini-3.8-flash','flash').used,1);
+ assert.equal(q.view(5,'gemini-3.8-flash','flash').windowEnd,Date.parse('2026-10-18T15:00:00+08:00'));
+ assert.equal(periodStart(Date.parse('2026-10-18T03:00:00+08:00')),Date.parse('2026-10-17T15:00:00+08:00'));
+});
+test('daily window retained; expiry does not erase evidence on read',()=>{
  let now=start;const q=new ModelQuotaLedger(undefined,()=>now);
  q.charge(4,'gemini-3.7-flash','flash');now+=10000;q.charge(4,'gemini-3.8-flash','flash');
  assert.equal(q.view(4,'gemini-3.8-flash','flash').windowStart,start);
- now=start+WINDOW;assert.equal(q.view(4,'gemini-3.7-flash','flash').used,0);
+ now=start+WINDOW+1;assert.equal(q.view(4,'gemini-3.7-flash','flash').used,0);
  assert.equal(q.snapshot().accounts['4'].models['gemini-3.7-flash'].used,1);
  q.charge(4,'gemini-3.8-flash','flash');
  assert.equal(q.view(4,'gemini-3.8-flash','flash').used,1);
