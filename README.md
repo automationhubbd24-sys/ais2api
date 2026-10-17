@@ -13,6 +13,8 @@ Dual-worker AI Studio proxy with OpenAI-compatible responses and an authenticate
 
 ## AI Studio app
 Workers run the client script inside an AI Studio app owned by your own Google account. See [docs/BUILD-APP.md](docs/BUILD-APP.md) for creating, sharing and switching the app.
+## Browser import userscript
+Import or refresh accounts straight from a logged-in browser with the Tampermonkey script in `dual-runtime/tools/`. Each user sets their own server address and sync key in the script. See [docs/COOKIE-SYNC.md](docs/COOKIE-SYNC.md).
 ## Private runtime data
 Account credentials, environment files, coordinator configuration, quota/execution state, request history, model policies and price configuration are local deployment data and must not be committed. Model policies and prices require explicit configuration on a new installation; they are not reconstructed from repository history.
 

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AIS2API Cookie 同步
 // @namespace    ais2api-cookie-sync
-// @version      1.4.0
-// @description  在 AI Studio 页面一键把当前 Google 登录状态导入 / 更新到 AIS2API 账号池；可检查 Cookie 是否完整
+// @version      1.5.0
+// @description  在 AI Studio 页面一键把当前 Google 登录状态导入 / 更新到你自己的 AIS2API 账号池；服务器地址和同步密钥装好后在脚本里设置
 // @match        https://aistudio.google.com/*
 // @match        https://accounts.google.com/*
 // @match        https://www.google.com/*
@@ -16,14 +16,20 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_info
-// @connect      __HOST__
+// @connect      *
 // @noframes
 // ==/UserScript==
 (function(){
 'use strict';
 // Other Google hosts are matched only so Tampermonkey grants cookie access; run on AI Studio only.
 if(location.hostname!=='aistudio.google.com')return;
-const SERVER=__SERVER__, KEY=__KEY__;
+// Server address and sync key. Leave empty and set them with the 设置 button / menu after installing,
+// or pre-fill here. Values saved through 设置 take precedence. Sync key: node dual-runtime/tools/cookie-sync-key.js
+const DEFAULT_SERVER='', DEFAULT_KEY='';
+const normServer=v=>{v=String(v||'').trim().replace(/\/+$/,'');if(!v)return '';if(!/^https?:\/\//i.test(v))v='https://'+v;
+ try{const u=new URL(v);return (u.origin+u.pathname).replace(/\/+$/,'');}catch{return null;}};
+const conf=()=>({server:normServer(GM_getValue('server','')||DEFAULT_SERVER)||'',key:String(GM_getValue('key','')||DEFAULT_KEY).trim()});
+const ready=()=>{const c=conf();return !!(c.server&&c.key);};
 const URLS=['https://aistudio.google.com/','https://accounts.google.com/','https://www.google.com/','https://myaccount.google.com/','https://ogs.google.com/','https://console.cloud.google.com/'];
 const SESSION=['SID','__Secure-1PSID','__Secure-3PSID'];
 const TS=['__Secure-1PSIDTS','__Secure-3PSIDTS'];
@@ -108,8 +114,8 @@ function fingerprint(state){
 function post(body,mode,force){
  const c=cfg();
  return new Promise((resolve,reject)=>GM_xmlhttpRequest({
-  method:'POST',url:SERVER+'/api/cookie-sync',timeout:30000,anonymous:true,
-  headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
+  method:'POST',url:conf().server+'/api/cookie-sync',timeout:30000,anonymous:true,
+  headers:{'Content-Type':'application/json','Authorization':'Bearer '+conf().key},
   data:JSON.stringify({mode,force:force===true,authUser:authUser(),tier:c.tier,alias:c.alias,state:body}),
   onload:r=>{let d={};try{d=JSON.parse(r.responseText);}catch{}resolve({status:r.status,d});},
   onerror:()=>reject(Error('无法连接服务器')),ontimeout:()=>reject(Error('连接服务器超时'))
@@ -135,15 +141,37 @@ function report(check,diag){
 }
 // Poll the server-side login check started by the import (it opens AI Studio with these cookies).
 function getJSON(url){
- return new Promise(resolve=>GM_xmlhttpRequest({method:'GET',url,timeout:20000,anonymous:true,headers:{'Authorization':'Bearer '+KEY},
+ return new Promise(resolve=>GM_xmlhttpRequest({method:'GET',url,timeout:20000,anonymous:true,headers:{'Authorization':'Bearer '+conf().key},
   onload:r=>{let d={};try{d=JSON.parse(r.responseText);}catch{}resolve({status:r.status,d});},onerror:()=>resolve({status:0,d:{}}),ontimeout:()=>resolve({status:0,d:{}})}));
+}
+// verify?id=0 needs a valid key and then fails validation with 400, so 400 means "reachable, key accepted".
+async function testConn(){
+ if(!ready())return toast('还没设置服务器地址和同步密钥',true);
+ const {status,d}=await getJSON(conf().server+'/api/cookie-sync/verify?id=0');
+ if(status===400)toast('连接正常，同步密钥有效 ✓\n'+conf().server);
+ else if(status===401)toast('同步密钥无效，请向管理员确认',true);
+ else if(status===0)toast('连不上服务器：检查地址；Tampermonkey 弹出跨域提示时选“总是允许”此域名',true);
+ else toast('服务器返回 '+status+'：'+(d.error||'不是 AIS2API 管理后台？'),true);
+}
+function setup(){
+ const c=conf();
+ const s=prompt('AIS2API 管理后台地址（例如 https://ais.example.com）',c.server);
+ if(s===null)return false;
+ const ns=normServer(s);if(!ns){toast('地址无效：'+s,true);return false;}
+ const k=prompt('同步密钥（64 位，由服务器管理员生成）'+(c.key?'\n留空 = 保留当前密钥':''),'');
+ if(k===null)return false;
+ const nk=(k.trim()||c.key).toLowerCase();
+ if(!/^[0-9a-f]{64}$/.test(nk)){toast('同步密钥应为 64 位十六进制字符，没有保存',true);return false;}
+ GM_setValue('server',ns);GM_setValue('key',nk);
+ toast('已保存服务器：'+ns+'\n正在测试连接…');setTimeout(testConn,800);
+ return true;
 }
 async function waitVerify(id){
  const until=Date.now()+8*60000;
  setStatus('账号 #'+id+'：服务器验证中…');
  while(Date.now()<until){
   await new Promise(r=>setTimeout(r,8000));
-  const {status,d}=await getJSON(SERVER+'/api/cookie-sync/verify?id='+id);
+  const {status,d}=await getJSON(conf().server+'/api/cookie-sync/verify?id='+id);
   if(status!==200||!d.job)continue;
   if(d.job.state!=='done'){setStatus('账号 #'+id+'：服务器验证中'+(d.job.waiting?'（实例忙，排队中）':'')+'…');continue;}
   const r=d.job.result;
@@ -158,6 +186,7 @@ let running=false;
 async function sync(mode,quiet){
  if(running)return;running=true;
  try{
+  if(!ready()){if(quiet)return;if(!setup()||!ready())throw Error('请先设置服务器地址和同步密钥（点“设置”）');}
   const {state,diag}=await collect();
   if(!state.cookies.some(c=>SESSION.includes(c.name))){
    if(quiet)return;
@@ -200,7 +229,7 @@ function initButtons(){
  const body=document.createElement('div');body.style.cssText='display:flex;flex-wrap:wrap;gap:6px;align-items:center';
  const tierBtn=mk('',()=>{const i=TIERS.findIndex(x=>x[0]===cfg().tier);GM_setValue('tier',TIERS[(i+1)%TIERS.length][0]);paint();toast('新账号分类：'+tierLabel(cfg().tier)+'（只影响新导入的账号）');});
  const paint=()=>{const t=tierInfo(cfg().tier);tierBtn.textContent='分类：'+t[1];tierBtn.style.background=t[2];};paint();
- body.append(mk('检查',()=>sync('check',false)),mk('导入',()=>sync('upsert',false)),tierBtn,
+ body.append(mk('设置',setup),mk('检查',()=>sync('check',false)),mk('导入',()=>sync('upsert',false)),tierBtn,
   mk('名称',()=>{const a=prompt('新账号名称（可留空，最多 40 字）',cfg().alias);if(a!==null){GM_setValue('alias',a.trim().slice(0,40));toast('名称：'+(cfg().alias||'（空）'));}}));
  const fold=mk('AIS',()=>{const hide=body.style.display!=='none';body.style.display=hide?'none':'flex';GM_setValue('folded',hide);});
  statusEl=document.createElement('div');statusEl.style.cssText='flex-basis:100%;display:none;font-size:12px;color:#333;max-width:320px';
@@ -209,6 +238,8 @@ function initButtons(){
  document.body.appendChild(bar);
 }
 if(document.body)initButtons();else window.addEventListener('DOMContentLoaded',initButtons,{once:true});
+GM_registerMenuCommand('设置服务器地址和同步密钥'+(ready()?'（'+conf().server+'）':'（未设置）'),setup);
+GM_registerMenuCommand('测试连接',testConn);
 GM_registerMenuCommand('检查 Cookie（不导入）',()=>sync('check',false));
 GM_registerMenuCommand('导入 / 更新当前账号',()=>sync('upsert',false));
 GM_registerMenuCommand('设置新账号的分类和名称（当前：'+tierLabel(cfg().tier)+'）',()=>{
