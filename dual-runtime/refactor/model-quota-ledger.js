@@ -5,8 +5,8 @@ const LIMITS=Object.freeze({flash:100,pro:10,ultra:10});
 const TIER_LIMITS=Object.freeze({
  standard:Object.freeze({flash:100,pro:10,ultra:10}),
  pro:Object.freeze({flash:100,pro:10,ultra:10}),
- ultra:Object.freeze({flash:500,pro:10,ultra:100}),
- ultra20:Object.freeze({flash:500,pro:10,ultra:200})
+ ultra:Object.freeze({flash:500,pro:100,ultra:100}),
+ ultra20:Object.freeze({flash:500,pro:200,ultra:200})
 });
 const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
 const object=o=>Boolean(o)&&typeof o==='object'&&!Array.isArray(o);
