@@ -25,7 +25,7 @@ function validate(d){
   return {cookies,origins};
 }
 const sess=list=>{const m=new Map();for(const c of list)if(SESSION_NAMES.includes(c.name)&&c.value)m.set(c.name,c.value);return m;};
-const listIds=()=>fs.readdirSync(AUTH_DIR).filter(n=>/^auth-\d+\.json$/.test(n)).map(n=>Number(n.match(/\d+/)[0]));
+const listIds=()=>{fs.mkdirSync(AUTH_DIR,{recursive:true,mode:0o700});return fs.readdirSync(AUTH_DIR).filter(n=>/^auth-\d+\.json$/.test(n)).map(n=>Number(n.match(/\d+/)[0]));};
 function findSame(cookies,nums){
   const mine=sess(cookies);if(!mine.size)return null;
   for(const n of nums){
