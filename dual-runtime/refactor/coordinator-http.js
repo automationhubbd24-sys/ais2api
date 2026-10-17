@@ -110,7 +110,7 @@ function createServer({keys,models,scheduler,status,actions}){
    if(req.method==='POST' && url.pathname==='/internal/accounts/delete'){
     if(!/^application\/json(?:\s*;|$)/i.test(String(req.headers['content-type']||'')))return json(res,415,{error:'JSON required'});
     try{return json(res,200,await actions.deleteAccount(await readBody()));}
-    catch(e){const code=[400,409,413].includes(e.statusCode)?e.statusCode:503;
+    catch(e){const code=[400,404,409,413].includes(e.statusCode)?e.statusCode:503;
      return json(res,code,{error:code===503?'删除未确认，请刷新状态后核对':e.message});}
    }
    if(url.pathname==='/internal/accounts/verify'){

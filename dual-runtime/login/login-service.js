@@ -226,7 +226,9 @@ http.createServer(async(req,res)=>{
   return send(res,405,{error:'Method not allowed'});
  }catch(e){send(res,400,{error:'请求无效'});}
 }).listen(PORT,'127.0.0.1',()=>console.log('login service on 127.0.0.1:'+PORT));
-// Auto re-login: accounts flagged invalid with a stored password get one attempt per 6h.
+// Auto re-login: only accounts added by email+password login (accountName is the email and a password
+// is stored). Cookie-imported accounts (accountName "导入账号 N") are never logged in automatically.
+// One attempt per 6h.
 const RETRY_MS=6*3600000;
 async function autoRelogin(){
  try{
@@ -241,6 +243,7 @@ async function autoRelogin(){
    let cred;try{cred=creds.get(a.id);}catch{creds.mark(a.id,'decrypt_failed');continue;}
    if(!cred)continue;
    let owner='';try{owner=String(JSON.parse(fs.readFileSync(path.join(AUTH,'auth-'+a.id+'.json'),'utf8')).accountName||'').toLowerCase();}catch{}
+   if(!owner.includes('@')){cred.password=null;continue;}
    if(owner!==cred.email.toLowerCase()){cred.password=null;creds.remove(a.id);continue;}
    creds.mark(a.id,'running');
    const job=startJob(cred.email,cred.password,{target:a.id,auto:true});cred.password=null;

@@ -92,7 +92,7 @@ async function main(){
    const cooldownUntil=dispatch.pool.cooldowns.get(id)||0;
    const flag=dispatch.accountFlags[id];
    return {cookie:cookieStatus(id,owner,flag),authStatus:flag?.status||'unknown',invalidReason:flag?.reason,
-    invalidAt:flag?.at,canDelete:!!flag&&flag.status!=='deleted'&&!accountOccupied(id),
+    invalidAt:flag?.at,canDelete:flag?.status!=='deleted'&&!accountOccupied(id),
     id,name,alias:names.alias,accountName:names.accountName,tier:tiers.tier(id),owner:owner||null,cooldownUntil,quota:dispatch.quotas.summary(id,policyStore.policies)};
   })
  });
@@ -128,10 +128,12 @@ async function main(){
    const id=body?.id,flag=dispatch.accountFlags[id];
    const error=(statusCode,message)=>Object.assign(Error(message),{statusCode});
    if(!Number.isSafeInteger(id)||id<1||body.confirm!=='DELETE '+id)throw error(400,'删除确认不匹配');
-   if(!flag||!['invalid','deleting','deleted'].includes(flag.status))throw error(409,'仅允许删除已标记失效账号');
-   if(stopping||dispatch.halted||accountOccupied(id))throw error(409,'账号仍被实例或未完成轮换占用');
-   if(flag.status==='deleted')return {deleted:true,id};
-   flag.status='deleting';dispatch.checkpoint();
+   if(!dispatch.pool.ids.includes(id))throw error(404,'账号 '+id+' 不在账号池');
+   if(flag?.status==='deleted')return {deleted:true,id};
+   // Any account can be deleted (healthy or not), as long as no instance is using it right now.
+   if(stopping||dispatch.halted||accountOccupied(id))throw error(409,'账号正被实例使用，请先换号再删除');
+   const f=dispatch.accountFlags[id]||(dispatch.accountFlags[id]={status:'deleting',reason:'login_required',at:Date.now()});
+   f.status='deleting';dispatch.checkpoint();
    const q=await driver.run('docker',['ps','--filter','label=operit.project=ais2api-dual','--filter','label=operit.account='+id,'--format','{{.ID}}'],{timeout:15000,maxBuffer:16384});
    if(q.stdout.trim()||accountOccupied(id))throw error(409,'账号仍被运行容器占用');
    const file=path.join(driver.authSource,'auth-'+id+'.json');
@@ -140,7 +142,9 @@ async function main(){
     if(!st.isFile()||st.isSymbolicLink())throw error(409,'认证文件类型异常，拒绝删除');
     fs.unlinkSync(file);driver.syncDirectory(driver.authSource);
    }catch(e){if(e.code!=='ENOENT')throw e;}
-   flag.status='deleted';flag.deletedAt=Date.now();dispatch.checkpoint();
+   f.status='deleted';f.deletedAt=Date.now();dispatch.checkpoint();
+   // Drop the saved password too, so a reused ID never auto-logs in with the old account.
+   try{require('../login/login-credentials').remove(id);}catch{}
    return {deleted:true,id,historyPreserved:true,retiredCopiesPreserved:true};
   },
   verifyAccount(body){

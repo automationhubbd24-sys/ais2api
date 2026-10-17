@@ -131,13 +131,13 @@ function renderAccountRows(d=state){
    const value=prompt('账号 #'+a.id+' 的名称（最多 40 字，留空恢复默认）',a.alias||'');if(value===null)return;
    rn.disabled=true;try{const r=await api('/api/accounts/name',{id:a.id,name:value});notice('账号 #'+a.id+' 名称'+(r.alias?'已改为：'+r.alias:'已恢复默认'));await refresh();}
    catch(e){notice('修改名称失败：'+e.message);rn.disabled=false;}});actions.append(rn);}
-  if(['invalid','deleting'].includes(a.authStatus)){
+  {const bad=['invalid','deleting'].includes(a.authStatus);
    const remove=el('button','删除');remove.type='button';remove.disabled=!a.canDelete||mutating||!fresh;
-   remove.title=a.canDelete?'删除认证文件':'占用中';
+   remove.title=a.canDelete?'删除认证文件':'正被实例使用，先换号再删';
    remove.addEventListener('click',()=>action('/api/accounts/delete',{id:a.id,confirm:'DELETE '+a.id},
-    '删除失效账号 #'+a.id+'？',
+    (bad?'删除失效账号 #':'删除账号 #')+a.id+(a.name?'（'+a.name+'）':'')+'？\n会删除它的登录文件和保存的密码，使用记录保留。',
     r=>'账号 #'+r.id+' 已删除'));
-   actions.append(remove);statusCell.title='登录失效，已排除自动轮换';
+   actions.append(remove);if(bad)statusCell.title='登录失效，已排除自动轮换';
   }
   row.append(actions);rows.append(row);
  }
