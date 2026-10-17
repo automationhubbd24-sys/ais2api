@@ -60,16 +60,18 @@ test('account alias is stored separately from login email and can be cleared',()
  tiers.setAlias(2,'');a.equal('displayName' in JSON.parse(fs.readFileSync(path.join(dir,'auth-2.json'))),false);
  a.equal((fs.statSync(path.join(dir,'auth-2.json')).mode&0o777),0o600);
 });
-test('pro accounts share the premium group with ultra but keep normal count limits',()=>{
- const {dir,tiers}=setup();tiers.setTier(2,'pro');tiers.setTier(3,'ultra');
+test('pro and ultra share the premium group; caps differ by class',()=>{
+ const {dir,tiers}=setup();tiers.setTier(2,'pro');tiers.setTier(3,'ultra');tiers.setTier(4,'ultra20');
  a.equal(JSON.parse(fs.readFileSync(path.join(dir,'auth-2.json'))).accountTier,'pro');
  a.equal(tiers.isPremium(2),true);a.equal(tiers.isPremium(3),true);a.equal(tiers.isPremium(1),false);a.equal(tiers.isUltra(2),false);
  tiers.setMode({enabled:true,slot:'B'});
  a.equal(tiers.allowed('B',2),true);a.equal(tiers.allowed('B',3),true);a.equal(tiers.allowed('B',1),false);a.equal(tiers.allowed('A',2),false);
- const st=tiers.status([1,2,3,4]);a.deepEqual(st.ultraAccounts,[3]);a.deepEqual(st.proAccounts,[2]);a.deepEqual(st.premiumAccounts,[2,3]);
- a.throws(()=>tiers.setTier(1,'max'),/standard、pro 或 ultra/);
- const q=new ModelQuotaLedger();
- for(const id of [1,2,3]){a.equal(q.view(id,'gemini-4-argon','ultra').limit,10);a.equal(q.view(id,'gemini-3.8-flash','flash').limit,100);a.equal(q.view(id,'gemini-3.1-pro-preview','pro').limit,10);}
+ const st=tiers.status([1,2,3,4]);a.deepEqual(st.ultraAccounts,[3,4]);a.deepEqual(st.proAccounts,[2]);a.deepEqual(st.premiumAccounts,[2,3,4]);
+ a.throws(()=>tiers.setTier(1,'max'),/standard、pro、ultra 或 ultra20/);
+ const q=new ModelQuotaLedger();q.tierOf=id=>tiers.tier(id);
+ const cap=(id,m,f)=>q.view(id,m,f).limit;
+ for(const [id,argon,flash] of [[1,10,100],[2,10,100],[3,100,500],[4,200,500]]){
+  a.equal(cap(id,'gemini-4-argon','ultra'),argon);a.equal(cap(id,'gemini-3.8-flash','flash'),flash);a.equal(cap(id,'gemini-3.1-pro-preview','pro'),10);}
 });
 test('premium model routing accepts pro and ultra accounts only',()=>{
  const {CatalogRouting}=require('./catalog-routing');

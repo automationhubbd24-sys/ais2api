@@ -2,7 +2,9 @@
 // Account class lives in each auth file (accountTier), so it survives imports,
 // cookie refreshes and the Ultra switch. The switch only changes slot allocation.
 const fs=require('fs'),path=require('path'),crypto=require('crypto');
-const TIERS=['standard','pro','ultra'];
+// ultra = Ultra 5x plan, ultra20 = Ultra 20x plan (different gemini-4-argon caps).
+const TIERS=['standard','pro','ultra','ultra20'];
+const TIER_LABELS={standard:'普通',pro:'Pro',ultra:'Ultra 5x',ultra20:'Ultra 20x'};
 function cleanAlias(name){
  if(name!==undefined&&name!==null&&typeof name!=='string')throw Object.assign(Error('名称格式无效'),{statusCode:400});
  const s=String(name||'').replace(/[\u0000-\u001f\u007f]/g,'').trim();
@@ -25,11 +27,11 @@ class AccountTiers{
   try{const t=JSON.parse(fs.readFileSync(this.authFile(id),'utf8')).accountTier;if(TIERS.includes(t))tier=t;}catch{}
   this.cache.set(id,{tag,tier});return tier;
  }
- isUltra(id){return this.tier(id)==='ultra';}
+ isUltra(id){const t=this.tier(id);return t==='ultra'||t==='ultra20';}
  // Pro and Ultra can both use premium models (e.g. gemini-4-argon) and share the dedicated slot.
- isPremium(id){const t=this.tier(id);return t==='pro'||t==='ultra';}
+ isPremium(id){return this.tier(id)!=='standard';}
  setTier(id,tier){
-  if(!TIERS.includes(tier))throw Object.assign(Error('分类只能是 standard、pro 或 ultra'),{statusCode:400});
+  if(!TIERS.includes(tier))throw Object.assign(Error('分类只能是 standard、pro、ultra 或 ultra20'),{statusCode:400});
   this.update(id,data=>{if(tier==='standard')delete data.accountTier;else data.accountTier=tier;});
   return {id,tier};
  }
@@ -74,4 +76,4 @@ class AccountTiers{
   return {...this.mode,active:this.active(),single:this.isSingle(),ultraAccounts:ultra,proAccounts:pro,premiumAccounts:ids.filter(id=>this.isPremium(id))};
  }
 }
-module.exports={AccountTiers,TIERS,cleanAlias};
+module.exports={AccountTiers,TIERS,TIER_LABELS,cleanAlias};

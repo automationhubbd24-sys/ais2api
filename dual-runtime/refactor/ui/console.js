@@ -47,7 +47,7 @@ const cookieSaveLabels={saved:'已保存',scheduled:'等待首次保存',saving:
 const keepLabels={ok:'成功',login_required:'跳转登录页，已标记失效',region_blocked:'地区受限',proxy_error:'代理/网络失败',timeout:'超时',unexpected_page:'页面异常',no_cookies:'未取得登录 Cookie',request_failed:'实例通信失败',auth_file_changed:'文件已更换未覆盖',too_large:'状态过大',failed:'失败'};
 function cookieFacts(a){
  const c=a?.cookie||{},save=c.save||{},now=Date.now(),soon=7*86400000;
- const login=c.login==='invalid'?['已失效','bad']:c.login==='online'?['在线','good']:c.login==='keepalive'?['保活正常','good']:c.login==='unconfirmed'?['待确认','warn']:['未验证','muted'];
+ const login=c.login==='invalid'?['已失效','bad']:c.login==='online'?['在线','good']:c.login==='unconfirmed'?['待确认','warn']:['未验证','muted'];
  let expiry;
  if(c.file==='missing')expiry=['文件缺失','bad'];
  else if(c.file&&c.file!=='ok')expiry=['文件损坏','bad'];
@@ -60,26 +60,19 @@ function cookieFacts(a){
   if(save.lastResult&&save.lastResult!=='saved')renew=[renew[0]+' · '+(cookieSaveLabels[save.lastResult]||'失败'),'warn'];
  }else if(save.lastResult&&save.lastResult!=='saved')renew=[(cookieSaveLabels[save.lastResult]||'保存失败')+' · '+cookieStamp(save.lastAttemptAt),'warn'];
  else renew=['—','muted'];
- let keep=null;
- if(Number.isFinite(c.keepaliveNextAt)){
-  const r=save.keepaliveResult,last=save.keepaliveAttemptAt&&r!=='ok'?(keepLabels[r]||'失败')+' · ':'';
-  keep=[last+'下次 '+(c.keepaliveNextAt<=now?'排队中':cookieStamp(c.keepaliveNextAt)),r&&r!=='ok'?'warn':'muted'];
- }
- return {login,expiry,renew,keep};
+ return {login,expiry,renew};
 }
 function cookieCell(a){
  const td=el('td',undefined,'cookie-cell'),f=cookieFacts(a);
  td.append(statusBadge(f.login[0],f.login[1]));
  td.append(el('small','到期 '+f.expiry[0],'cookie-line '+f.expiry[1]));
- if(f.keep)td.append(el('small','保活 '+f.keep[0],'cookie-line '+f.keep[1]));
  td.title='续期：'+f.renew[0];
  return td;
 }
 function workerCookie(s,a){
- const box=el('div',undefined,'worker-cookie'),f=cookieFacts(a),am=s.authMaintenance||{},head=el('div',undefined,'worker-cookie-head');
+ const box=el('div',undefined,'worker-cookie'),f=cookieFacts(a),head=el('div',undefined,'worker-cookie-head');
  box.append(head);
- const next=am.running?['正在保存','warn']:[Number.isFinite(am.nextAt)?cookieStamp(am.nextAt):'—','muted'];
- for(const [k,v] of [['登录',f.login],['到期',f.expiry],['续期',f.renew],['下次保存',next]]){
+ for(const [k,v] of [['登录',f.login],['到期',f.expiry],['续期',f.renew]]){
   const line=el('div',undefined,'cookie-row');line.append(el('span',k),el('strong',v[0],v[1]));box.append(line);
  }
  return box;
@@ -120,7 +113,7 @@ function renderAccountRows(d=state){
  for(const a of accounts.slice((accountPage-1)*size,accountPage*size)){
   const row=el('tr'),identity=el('td'),name=el('button',undefined,'account-name account-name-button'),text=el('div',undefined,'account-identity');
   name.type='button';name.setAttribute('aria-label','查看账号 '+a.id+' 的额度详情');name.addEventListener('click',()=>openAccount(a.id));
-  const nameLine=el('div',undefined,'account-title-line');nameLine.append(el('strong',a.name||'未命名账号'));if(a.tier==='ultra')nameLine.append(el('span','Ultra','badge ultra-badge'));else if(a.tier==='pro')nameLine.append(el('span','Pro','badge pro-badge'));
+  const nameLine=el('div',undefined,'account-title-line');nameLine.append(el('strong',a.name||'未命名账号'));if(a.tier==='ultra'||a.tier==='ultra20')nameLine.append(el('span',(a.tier==='ultra20'?'Ultra 20x':'Ultra 5x'),'badge ultra-badge'));else if(a.tier==='pro')nameLine.append(el('span','Pro','badge pro-badge'));
   text.append(nameLine,el('small','账号 #'+a.id));name.append(el('span',String(a.name||a.id).slice(0,1).toUpperCase(),'avatar'),text);identity.append(name);row.append(identity);
   const owner=el('td');owner.append(el('span',a.owner?'实例 '+a.owner:'未分配',a.owner?'instance-chip':'muted'));row.append(owner);
   const quotaCell=el('td'),quotaBox=el('button',undefined,'account-model-quota'),models=Object.values(a.quota?.models||{}),known=models.map(quotaFraction).filter(value=>value!==null);

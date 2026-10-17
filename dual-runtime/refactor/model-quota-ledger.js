@@ -1,6 +1,13 @@
  'use strict';
 const WINDOW=86400000;
 const LIMITS=Object.freeze({flash:100,pro:10,ultra:10});
+// Daily caps per account class. 'ultra' family = premium models (gemini-4-argon).
+const TIER_LIMITS=Object.freeze({
+ standard:Object.freeze({flash:100,pro:10,ultra:10}),
+ pro:Object.freeze({flash:100,pro:10,ultra:10}),
+ ultra:Object.freeze({flash:500,pro:10,ultra:100}),
+ ultra20:Object.freeze({flash:500,pro:10,ultra:200})
+});
 const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
 const object=o=>Boolean(o)&&typeof o==='object'&&!Array.isArray(o);
 const integer=n=>Number.isSafeInteger(n)&&n>=0;
@@ -34,9 +41,8 @@ function validate(raw){
  return structuredClone(raw);
 }
 class ModelQuotaLedger{
- constructor(raw={version:1,accounts:{}},clock=Date.now){this.data=validate(raw);this.clock=clock;this.unlimited=()=>false;}
- // Every account class (standard/pro/ultra) uses the same per-model caps.
- limitFor(id,family){return this.unlimited(id)?null:LIMITS[family];}
+ constructor(raw={version:1,accounts:{}},clock=Date.now){this.data=validate(raw);this.clock=clock;this.unlimited=()=>false;this.tierOf=()=>'standard';}
+ limitFor(id,family){if(this.unlimited(id))return null;const t=TIER_LIMITS[this.tierOf(id)]||TIER_LIMITS.standard;return t[family];}
  account(id,create=false){
   const key=accountKey(id);
   if(!own(this.data.accounts,key)&&create)this.data.accounts[key]={windowStart:0,models:{},legacy:null};
@@ -91,4 +97,4 @@ class ModelQuotaLedger{
  }
  snapshot(){return structuredClone(this.data);}
 }
-module.exports={ModelQuotaLedger,LIMITS,WINDOW,validate};
+module.exports={ModelQuotaLedger,LIMITS,TIER_LIMITS,WINDOW,validate};

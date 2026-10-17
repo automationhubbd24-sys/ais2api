@@ -55,12 +55,12 @@ function saveImport(system,body,{tier,alias,update=false,mode}={}){
     fs.writeFileSync(tmp,content,{flag:"wx",mode:0o600});
     try{fs.renameSync(tmp,file);}catch(e){try{fs.unlinkSync(tmp);}catch{}throw e;}
     system.logger.info("[Import] 更新账号 #"+same+" 的 Cookie");
-    return {index:same,updated:true,tier:["pro","ultra"].includes(keep.accountTier)?keep.accountTier:"standard",alias:keep.displayName||"",verified:false};
+    return {index:same,updated:true,tier:["pro","ultra","ultra20"].includes(keep.accountTier)?keep.accountTier:"standard",alias:keep.displayName||"",verified:false};
   }
   if(mode==="update")throw httpError(404,"这个 Google 账号还没导入过；自动同步只更新已导入的账号");
   if(nums.length>=50)throw httpError(409,"账号数量已达上限");
   const index=Math.max(0,...nums)+1;
-  tier=["pro","ultra"].includes(tier)?tier:"standard";alias=cleanAlias(alias);
+  tier=["pro","ultra","ultra20"].includes(tier)?tier:"standard";alias=cleanAlias(alias);
   const content=JSON.stringify({cookies:data.cookies,origins:data.origins,accountName:"导入账号 "+index,...(tier!=="standard"?{accountTier:tier}:{}),...(alias?{displayName:alias}:{})});
   if(Buffer.byteLength(content)>262144)throw httpError(413,"文件过大");
   fs.writeFileSync(path.join(AUTH_DIR,"auth-"+index+".json"),content,{flag:"wx",mode:0o600});

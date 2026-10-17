@@ -41,6 +41,7 @@ async function main(){
  dispatch.slotRule=slot=>!tiers.active()?'':slot===tiers.mode.slot?'实例 '+slot+' 只用 Pro/Ultra 账号':'实例 '+slot+' 不使用 Pro/Ultra 账号';
  routing.isUltra=id=>tiers.isUltra(id);
  routing.isPremium=id=>tiers.isPremium(id);
+ dispatch.quotas.tierOf=id=>tiers.tier(id);
  scheduler.resolveModel=(route,body,options)=>routing.resolve(route,body,options);
  dispatch.quotaExhausted=(slot,plan)=>routing.exhausted(slot,plan);
  let stopping=false;
@@ -59,23 +60,22 @@ async function main(){
   const slot=owner?dispatch.pool.slots.get(owner):undefined,s=owner?dispatch.slots.get(owner):undefined;
   const login=flag&&['invalid','deleting','deleted'].includes(flag.status)?'invalid':
    slot?.current===id?((s?.ready||s?.active>0)&&!monitor.status(owner).error?'online':'unconfirmed'):
-   (dispatch.authSaves?.[id]?.keepaliveResult==='ok'&&Date.now()-(dispatch.authSaves[id].keepaliveAt||0)<4*86400000?'keepalive':'unverified');
+   'unverified';
   return {login,file:info.state,keyCookies:info.keyCookies||0,
    expiresAt:Number.isFinite(info.expiresAt)?info.expiresAt:null,session:info.session===true,
    expired:Number.isFinite(info.expiresAt)&&info.expiresAt<=Date.now(),
-   modifiedAt:info.modifiedAt||null,save:dispatch.authSaves?.[id]||null,
-   keepaliveNextAt:owner||login==='invalid'?null:keepalive.dueAt(id)};
+   modifiedAt:info.modifiedAt||null,save:dispatch.authSaves?.[id]||null};
  };
  const status=()=>({
   halted:dispatch.halted,queue:scheduler.queue.length,scheduling:scheduler.status(),
-  streamingMode:lastMode,ultra:tiers.status(dispatch.pool.ids),rotationThrottle:{...dispatch.rotationThrottle,intervalMs:300000},keepalive:keepalive.status(),browserLease:browserLease?browserLease.status():null,runMode:browserLease?browserLease.modeStatus():null,
+  streamingMode:lastMode,ultra:tiers.status(dispatch.pool.ids),rotationThrottle:{...dispatch.rotationThrottle,intervalMs:300000},browserLease:browserLease?browserLease.status():null,runMode:browserLease?browserLease.modeStatus():null,
   analytics:recordedForward.status(),
   retiredCleanup:cleanup.status(),
-  quotaMode:"per-account-per-model",quotaLimits:{flash:100,pro:10},
+  quotaMode:"per-account-per-model",quotaLimits:require('./model-quota-ledger').TIER_LIMITS,
   slots:Object.fromEntries([...dispatch.slots].map(([slot,s])=>[slot,{
    account:dispatch.pool.slots.get(slot)?.current,
    pending:dispatch.pool.slots.get(slot)?.pending?.id,
-   active:s.active,ready:s.ready,authMaintenance:authMaintenance.status(slot),
+   active:s.active,ready:s.ready,
    quota:Number.isSafeInteger(dispatch.pool.slots.get(slot)?.current)?dispatch.quotas.summary(dispatch.pool.slots.get(slot).current,policyStore.policies):undefined,
    healthCheck:monitor.status(slot),workerEpoch:s.workerEpoch,workerHealth:s.workerHealth,pendingRetirements:Object.keys(s.retirements||{}).length,
    pendingExecutions:Object.values(s.executions||{}).map(t=>({id:t.id,phase:t.phase,createdAt:t.createdAt})),
@@ -98,8 +98,6 @@ async function main(){
  });
  const {ProxySettings}=require('./proxy-settings');
  const proxies=new ProxySettings({root,dispatch,driver,client,rotation,scheduler,isStopping:()=>stopping});
- const {AuthMaintenance}=require('./auth-maintenance');
- const authMaintenance=new AuthMaintenance({dispatch,driver,client,scheduler,isStopping:()=>stopping});
  const {SpareKeepalive}=require('./spare-keepalive');
  const verifyJobs=new Map();
  const keepalive=new SpareKeepalive({dispatch,driver,client,scheduler,rotation,occupied:accountOccupied,isStopping:()=>stopping});
@@ -271,7 +269,7 @@ async function main(){
  await new Promise((resolve,reject)=>{
   server.once('error',reject);server.listen(8890,'127.0.0.1',resolve);
  });
- const authTimer=setInterval(()=>{actions.syncAccounts().then(r=>{if(r.added?.length)console.log('[Accounts] synced',r.added.join(','));}).catch(()=>{});authMaintenance.tick();keepalive.tick();},60000);authTimer.unref();
+ const authTimer=setInterval(()=>{actions.syncAccounts().then(r=>{if(r.added?.length)console.log('[Accounts] synced',r.added.join(','));}).catch(()=>{});},60000);authTimer.unref();
  const timer=setInterval(()=>monitor.tick(),2000);
  const modeTimer=setInterval(()=>browserLease.tick(),5000);modeTimer.unref();
  const cleanupTimer=setInterval(()=>cleanup.tick(),60000);cleanupTimer.unref();
@@ -280,7 +278,7 @@ async function main(){
   if(stopping)return;stopping=true;clearInterval(timer);clearInterval(authTimer);clearInterval(cleanupTimer);cleanup.close();monitor.close();scheduler.close();
   server.close();
   const deadline=Date.now()+620000;
-  while(Date.now()<deadline && ([...dispatch.slots.values()].some(s=>s.active>0||Object.keys(s.retirements||{}).length>0)||[...rotation.running].some(slot=>!dispatch.slots.get(slot).proxyApply)||catalogs.jobs.size||proxies.jobs.size||authMaintenance.jobs.size)){
+  while(Date.now()<deadline && ([...dispatch.slots.values()].some(s=>s.active>0||Object.keys(s.retirements||{}).length>0)||[...rotation.running].some(slot=>!dispatch.slots.get(slot).proxyApply)||catalogs.jobs.size||proxies.jobs.size)){
    await scheduler.reconcile();
    await Promise.all(["A","B"].map(slot=>catalogs.reconcile(slot)));
    await new Promise(r=>setTimeout(r,500));

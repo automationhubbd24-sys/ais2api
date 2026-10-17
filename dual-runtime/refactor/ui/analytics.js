@@ -31,7 +31,7 @@
  }
  function renameRefresh(){renderAccountDetail();document.dispatchEvent(new Event('ais-refresh'));}
  async function setTier(id,tier,button){
-  if(tier!=='standard'&&!confirm('将账号 #'+id+' 标记为 '+(tier==='ultra'?'Ultra':'Pro')+'？\n开启 Pro/Ultra 专用实例后，它只会分配到专用实例。'))return;
+  if(tier!=='standard'&&!confirm('将账号 #'+id+' 标记为 '+(tier==='ultra20'?'Ultra 20x':tier==='ultra'?'Ultra 5x':'Pro')+'？\n开启 Pro/Ultra 专用实例后，它只会分配到专用实例。'))return;
   button.disabled=true;
   try{const r=await fetch('/api/accounts/tier',{method:'POST',credentials:'same-origin',redirect:'error',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({id,tier})});
    const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||'保存失败');
@@ -46,7 +46,7 @@
    for(const h of ['账号','模型','今天','近 7 天','近 30 天','429 次数','最近 429'])head.append(node('th',h));
    const thead=node('thead');thead.append(head);table.append(thead);const body=node('tbody');
    for(const i of d.items){const tr=node('tr');
-    const who=node('td');who.append(node('span','#'+(i.account??'—')));if(i.tier==='ultra')who.append(node('span','Ultra','badge ultra-badge'));else if(i.tier==='pro')who.append(node('span','Pro','badge pro-badge'));tr.append(who);
+    const who=node('td');who.append(node('span','#'+(i.account??'—')));if(i.tier==='ultra'||i.tier==='ultra20')who.append(node('span',(i.tier==='ultra20'?'Ultra 20x':'Ultra 5x'),'badge ultra-badge'));else if(i.tier==='pro')who.append(node('span','Pro','badge pro-badge'));tr.append(who);
     tr.append(node('td',i.model));
     for(const k of ['today','week','month']){const c=i[k],td=node('td');td.append(node('strong',fmt(c.requests)));td.append(node('small',' 成功 '+fmt(c.success),'muted'));tr.append(td);}
     tr.append(node('td',fmt(i.today.rateLimited)+' / '+fmt(i.week.rateLimited)+' / '+fmt(i.month.rateLimited)));
@@ -139,7 +139,7 @@
   const box=byId('quota-accounts'),a=accountData.find(item=>String(item.id)===String(selectedAccount));box.replaceChildren();
   if(!a){box.append(node('div','该账号已不在当前账号池中。','card empty'));return;}
   byId('account-dialog-title').textContent=a.name||'未命名账号';byId('account-dialog-subtitle').textContent='账号 #'+a.id+' · '+(a.owner?'实例 '+a.owner:a.cooldownUntil>Date.now()?'冷却中':'未分配');
-  const overview=node('div',undefined,'account-detail-overview'),title=node('h3','状态与额度'),fields=node('div',undefined,'account-detail-fields');overview.append(title);pair(fields,'当前实例',a.owner||'未分配');pair(fields,'账号状态',a.cooldownUntil>Date.now()?'冷却中':a.owner?'已分配':'备用');pair(fields,'账号分类',a.tier==='ultra'?'Ultra':a.tier==='pro'?'Pro':'普通');if(a.accountName&&a.accountName!==a.name)pair(fields,'登录邮箱',a.accountName);overview.append(fields);{const n=node('button','修改名称');n.type='button';n.addEventListener('click',()=>renameAccount(a,n));overview.append(n);}for(const [tv,tl] of [['standard','设为普通账号'],['pro','设为 Pro 账号'],['ultra','设为 Ultra 账号']]){if((a.tier||'standard')===tv)continue;const t=node('button',tl);t.type='button';t.addEventListener('click',()=>setTier(a.id,tv,t));overview.append(t);}box.append(overview);
+  const overview=node('div',undefined,'account-detail-overview'),title=node('h3','状态与额度'),fields=node('div',undefined,'account-detail-fields');overview.append(title);pair(fields,'当前实例',a.owner||'未分配');pair(fields,'账号状态',a.cooldownUntil>Date.now()?'冷却中':a.owner?'已分配':'备用');pair(fields,'账号分类',a.tier==='ultra20'?'Ultra 20x':a.tier==='ultra'?'Ultra 5x':a.tier==='pro'?'Pro':'普通');if(a.accountName&&a.accountName!==a.name)pair(fields,'登录邮箱',a.accountName);overview.append(fields);{const n=node('button','修改名称');n.type='button';n.addEventListener('click',()=>renameAccount(a,n));overview.append(n);}for(const [tv,tl] of [['standard','设为普通账号'],['pro','设为 Pro 账号'],['ultra','设为 Ultra 5x 账号'],['ultra20','设为 Ultra 20x 账号']]){if((a.tier||'standard')===tv)continue;const t=node('button',tl);t.type='button';t.addEventListener('click',()=>setTier(a.id,tv,t));overview.append(t);}box.append(overview);
   if(a.cooldownUntil>Date.now())box.append(node('div','账号冷却至 '+time(a.cooldownUntil),'note warn'));
   if(!a.quota){box.append(node('div','额度信息不可用','note warn'));return;}
   const models=Object.values(a.quota.models||{});if(!models.length){box.append(node('div','尚未配置模型额度策略','empty'));return;}
