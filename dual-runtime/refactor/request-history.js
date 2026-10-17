@@ -22,7 +22,7 @@ function metrics(input){
   result.validCache=result.cached===null||result.input===null||result.cached<=result.input;
   out.usage=result;
  }
- out.usageComplete=out.usageComplete && out.transportComplete && !!out.usage && !out.applicationError && !out.captureLimited && !out.malformed;
+ out.usageComplete=out.usageComplete && (out.transportComplete || out.streamDoneSeen) && !!out.usage && !out.applicationError && !out.captureLimited && !out.malformed;
  return out;
 }
 function priceSnapshot(p){

@@ -109,7 +109,7 @@
   status.append(node('span',Number.isFinite(r.httpStatus)?r.httpStatus:outcomeLabel,'badge '+statusKind));status.title=outcomeLabel;model.append(node('strong',r.requestedModel||r.model||'模型未知','request-model'));
   account.append(node('span','账号 #'+(r.account??'未知')),node('small','实例 '+(r.slot||'未知')));type.append(node('span',r.stream?'stream':'同步','badge stream-badge'));grid.append(status,model,account,type);
   const tokens=pair(grid,'TOKEN  输入 / 输出',compact(u?.input)+' / '+compact(u?.output),'metric-token');tokens.title='输入 '+fmt(u?.input)+' / 输出 '+fmt(u?.output);
-  pair(grid,'缓存 / 思考',compact(u?.cached)+' / '+compact(u?.reasoning),'metric-cache');
+  pair(grid,'思考',compact(u?.reasoning),'metric-cache');
   pair(grid,'首内容 / 总耗时',seconds(r.metrics?.firstContentMs)+' / '+seconds(r.metrics?.durationMs),'metric-duration');
   pair(grid,'估算费用',money(r.cost?.amount),'metric-price');
   const when=node('time',time(r.createdAt),'request-time'),created=new Date(r.createdAt);if(Number.isFinite(r.createdAt)&&Number.isFinite(created.getTime()))when.dateTime=created.toISOString();grid.append(when);
@@ -118,10 +118,10 @@
   if(endedBeforeClose)body.append(node('p','已收到结束标记，连接未正常关闭','warn'));
   if(!Number.isFinite(r.cost?.amount))body.append(node('p','尚未计价：'+(r.cost?.reason||'未记录结束'),'muted'));
   if(r.outcome==='pending')body.append(node('p','可能仍在执行','warn'));
-  const exact=node('div',undefined,'exact-metrics');for(const [title,value] of [['输入 Token',u?.input],['输出 Token',u?.output],['缓存 Token',u?.cached],['思考 Token',u?.reasoning]])pair(exact,title,fmt(value));body.append(exact);
+  const exact=node('div',undefined,'exact-metrics');for(const [title,value] of [['输入 Token',u?.input],['输出 Token',u?.output],['思考 Token',u?.reasoning]])pair(exact,title,fmt(value));body.append(exact);
   body.append(node('code',r.id,'request-id'));detail.append(body);box.append(detail);return box;
  }
- function tableHead(){const head=node('div',undefined,'request-table-head');head.setAttribute('aria-hidden','true');for(const title of ['状态','模型','账号','类型','TOKEN','缓存 / 思考','首内容 / 总耗时','估算费用','时间',''])head.append(node('span',title));return head;}
+ function tableHead(){const head=node('div',undefined,'request-table-head');head.setAttribute('aria-hidden','true');for(const title of ['状态','模型','账号','类型','TOKEN','思考','首内容 / 总耗时','估算费用','时间',''])head.append(node('span',title));return head;}
  function pager(){byId('history-prev').disabled=historyBusy||page<=1;byId('history-next').disabled=historyBusy||page*20>=total;byId('history-page').textContent='第 '+page+' / '+Math.max(1,Math.ceil(total/20))+' 页 · 共 '+total+' 条';}
  async function loadHistory(){
   historyController?.abort();const control=new AbortController();historyController=control;historyBusy=true;pager();byId('history-refresh').disabled=true;byId('history-list').setAttribute('aria-busy','true');

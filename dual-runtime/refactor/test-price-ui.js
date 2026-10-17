@@ -10,7 +10,7 @@ function setup(){
    add(item){this.children.push(item);}
   };
  }
- const ids=['price-form','price-message','price-read','price-save','price-model','price-input','price-output','price-cached','price-reasoning','price-reasoning-mode'];
+ const ids=['price-form','price-message','price-read','price-save','price-model','price-input','price-output','price-reasoning','price-reasoning-mode'];
  for(const id of ids)nodes.set(id,element(id));
  nodes.get('price-form').elements=ids.filter(id=>!['price-form','price-message','price-read'].includes(id)).map(id=>nodes.get(id));
  let revision=0,nextError=0;

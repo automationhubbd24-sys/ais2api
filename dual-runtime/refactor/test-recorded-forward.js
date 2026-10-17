@@ -55,14 +55,14 @@ test('request history never mutates execution ticket',async()=>{
  assert.equal(JSON.stringify(ticket),before);
 });
 
-test('continuation usage is not presented as a verified aggregate',async()=>{
+test('anti-truncation aggregate usage stays countable',async()=>{
  const h=fake();
  const result={status:200,metrics:{transportComplete:true,usageComplete:true,usage:{input:10,output:20}}};
  const f=create({history:h,forward:async()=>result});
  const actual=await invoke(f);
  assert.equal(actual,result);
  assert.equal(result.metrics.usageComplete,true);
- assert.equal(h.calls[1][2].metrics.usageComplete,false);
+ assert.equal(h.calls[1][2].metrics.usageComplete,true);
  assert.equal(h.calls[1][2].metrics.usage.output,20);
 });
 test('ordinary model usage completeness is preserved',async()=>{

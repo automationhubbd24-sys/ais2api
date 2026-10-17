@@ -60,3 +60,10 @@ test('finish is idempotent and never retains response text',()=>{
  const a=r.finish();r.write('ignored');
  assert.deepEqual(r.finish(),a);assert.equal(r.buffer,'');assert.deepEqual(r.event,[]);
 });
+
+test('stream usage after [DONE] counts even if the socket closes abruptly',()=>{
+ const r=new R({stream:true});
+ r.write('data: {"usage":{"prompt_tokens":10,"completion_tokens":2}}\n\ndata: [DONE]\n\n');
+ const m=r.finish({complete:false});
+ assert.equal(m.usageComplete,true);assert.equal(m.transportComplete,false);
+});

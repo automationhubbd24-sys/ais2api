@@ -1,7 +1,7 @@
 'use strict';
 (()=>{
  const $=id=>document.getElementById(id);
- const fields={inputPerMillion:'price-input',outputPerMillion:'price-output',cachedPerMillion:'price-cached',reasoningPerMillion:'price-reasoning'};
+ const fields={inputPerMillion:'price-input',outputPerMillion:'price-output',reasoningPerMillion:'price-reasoning'};
  let snapshot,reading=false,saving=false,valid=false;
  const message=text=>{$('price-message').textContent=text;};
  function controls(){
@@ -47,7 +47,7 @@
  $('price-form').addEventListener('submit',async event=>{
   event.preventDefault();
   if(!valid||reading||saving||!$('price-model').value)return;
-  const price={currency:'USD',reasoningMode:$('price-reasoning-mode').value};
+  const price={currency:'USD',reasoningMode:$('price-reasoning-mode').value,cachedPerMillion:null};
   for(const [key,id] of Object.entries(fields)){
    const text=$(id).value.trim();
    price[key]=text===''?null:Number(text);

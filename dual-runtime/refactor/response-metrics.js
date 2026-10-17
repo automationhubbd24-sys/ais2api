@@ -89,7 +89,7 @@ class ResponseMetrics {
    this.buffer='';this.event=[];
   }
   return {
-   usage:this.usage,usageComplete:!!this.usage && this.complete && !this.limited && !this.malformed && !this.applicationError,
+   usage:this.usage,usageComplete:!!this.usage && (this.complete || this.done) && !this.limited && !this.malformed && !this.applicationError,
    firstByteMs:this.firstByteMs,firstContentMs:this.firstContentMs,durationMs:this.durationMs,
    timingSource:'coordinator-response-observer',transportComplete:this.complete,
    streamDoneSeen:this.done,applicationError:this.applicationError,

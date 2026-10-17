@@ -36,8 +36,9 @@ function createRecordedForward({history,forward,priceFor=()=>void 0,clock=Date.n
   }finally{
    if(started){
     const m=result?.metrics;
-    const recordedMetrics=m && continuationPossible?
-     {...m,usageComplete:false}:m;
+    // Anti-truncation workers emit usage only when every continuation round reported it (summed),
+    // so the observed usage is the full billed aggregate and is kept as-is.
+    const recordedMetrics=m;
     const outcome=result?.cancelled?'cancelled':
      !result||result.uncertain?'uncertain':
      Number.isInteger(result.status)&&result.status>=400?'http_error':
