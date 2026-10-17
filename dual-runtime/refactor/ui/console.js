@@ -1,6 +1,7 @@
  'use strict';
 const $=id=>document.getElementById(id);
-const titles={overview:'仪表盘',accounts:'账号管理',models:'模型目录',usage:'使用统计',history:'请求记录',settings:'系统运维'};
+const titles={overview:'概览',accounts:'账号',models:'模型',usage:'统计',history:'请求记录',settings:'设置'};
+const pageAlias={add:'accounts'};
 let state=null,reading=false,mutating=false,fresh=false,readTask=null,statusError=false;
 let accountPage=1;
 const accountColumns=['账号','实例','模型额度','状态','Cookie 状态','冷却结束','操作'];
@@ -29,8 +30,8 @@ function setupAccountColumns(){
 }
 function notice(message){$('notice').textContent=message;$('notice').hidden=!message;}
 function date(value){return Number.isFinite(value)&&value>0?new Date(value).toLocaleString('zh-CN',{hour12:false}):'—';}
-function navigate(){const name=location.hash.slice(1);const page=titles[name]?name:'overview';for(const key of Object.keys(titles))$(key).hidden=key!==page;document.querySelectorAll('[data-page]').forEach(a=>{a.classList.toggle('selected',a.dataset.page===page);if(a.dataset.page===page)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});$('page-title').textContent=titles[page];$('refresh').hidden=page==='usage'||page==='history';if(page==='overview')loadOverviewUsage();}
-function controls(){for(const id of ['sync','rotate','restart','save-mode'])$(id).disabled=mutating;}
+function navigate(){const raw=location.hash.slice(1),name=pageAlias[raw]||raw;const page=titles[name]?name:'overview';for(const key of Object.keys(titles))$(key).hidden=key!==page;document.querySelectorAll('[data-page]').forEach(a=>{const on=a.dataset.page===page&&(a.dataset.page!=='add')||a.dataset.page==='add'&&raw==='add';a.classList.toggle('selected',on);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});$('page-title').textContent=raw==='add'?'添加账号':titles[page];$('refresh').hidden=page==='usage'||page==='history';if(page==='overview')loadOverviewUsage();}
+function controls(){for(const id of ['sync','rotate','restart'])$(id).disabled=mutating||!fresh;$('save-mode').disabled=mutating;document.querySelectorAll('[data-worker-action]').forEach(b=>b.disabled=mutating||!fresh);}
 async function api(path,body){
  const c=new AbortController(),timer=setTimeout(()=>c.abort(),body===undefined?25000:65000);
  try{const options={credentials:'same-origin',redirect:'error',signal:c.signal,headers:{Accept:'application/json'}};if(body!==undefined){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
@@ -199,6 +200,7 @@ function render(d){
    else q.append(el('small',item.windowEnd?'窗口结束 '+date(item.windowEnd):'窗口未启用','muted'));
    if(index<3)quotaList.append(q);else extra.append(q);
   });box.append(quotaList);if(extra)box.append(extra);
+     const ops=el('div',undefined,'worker-actions');for(const [label,kind,cls] of [['切换账号','rotate','primary'],['重启','restart','']]){const b=el('button',label,cls);b.type='button';b.dataset.workerAction=kind;b.dataset.slot=slot;b.disabled=mutating||!fresh;b.addEventListener('click',()=>{$('slot').value=slot;$(kind).click();});ops.append(b);}box.append(ops);
   const foot=el('div',undefined,'worker-foot');foot.append(el('span','账号 #'+(s.account??'—')),el('span','最近检查 '+cookieStamp(s.healthCheck?.checkedAt)));box.append(foot);workers.append(box);
  }
  let cleanupNote=$('cleanup-status');

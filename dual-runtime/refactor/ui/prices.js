@@ -64,7 +64,7 @@
  });
  $('price-model').addEventListener('change',fill);
  $('price-read').addEventListener('click',load);
- addEventListener('hashchange',()=>{if(location.hash==='#settings'&&!snapshot)load();});
- if(location.hash==='#settings')load();
+ addEventListener('hashchange',()=>{if(location.hash==='#models'&&!snapshot)load();});
+ if(location.hash==='#models')load();
  controls();
 })();
