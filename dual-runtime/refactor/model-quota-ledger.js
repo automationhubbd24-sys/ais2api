@@ -4,7 +4,7 @@ const LIMITS=Object.freeze({flash:100,pro:10,ultra:10});
 // Daily caps per account class. 'ultra' family = premium models (gemini-4-argon).
 const TIER_LIMITS=Object.freeze({
  standard:Object.freeze({flash:100,pro:10,ultra:10}),
- pro:Object.freeze({flash:100,pro:10,ultra:10}),
+ pro:Object.freeze({flash:100,pro:50,ultra:50}),
  ultra:Object.freeze({flash:500,pro:100,ultra:100}),
  ultra20:Object.freeze({flash:500,pro:200,ultra:200})
 });
