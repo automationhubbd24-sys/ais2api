@@ -1632,7 +1632,11 @@ class RequestHandler {
           `[Adapter] 收到来自浏览器的错误，将触发切换逻辑。状态码: ${initialMessage.status}, 消息: ${initialMessage.message}`,
         );
         await this._handleRequestFailureAndSwitch(initialMessage, res);
-        if (isOpenAIStream) {
+        if (isOpenAIStream && !res.headersSent) {
+          // Nothing streamed yet: report the real upstream status so the failure is not
+          // recorded as a successful request without usage.
+          this._sendErrorResponse(res, initialMessage.status || 502, initialMessage.message);
+        } else if (isOpenAIStream) {
           if (!res.writableEnded) {
             res.write("data: [DONE]\n\n");
             res.end();
@@ -2257,6 +2261,7 @@ class RequestHandler {
       const r = AT.atExtractAnswer(current);
       if (r.found ? /^STOP$/.test(r.finishReason || String()) : false) {
         if (atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount)) r.usageMetadata = atUsage.sum;
+        else this.logger.warn("[AT] usage missing in at least one round; tokens for this request will be unknown");
         this.logger.info("[AT] emit_answer found on attempt " + attempt + ", len=" + r.answer.length);
         return r;
       }

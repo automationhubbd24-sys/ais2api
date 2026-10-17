@@ -71,3 +71,9 @@ test('ordinary model usage completeness is preserved',async()=>{
  await invoke(create({history:h,forward:async()=>result}),{model:'gemini-test-flash'});
  assert.equal(h.calls[1][2].metrics.usageComplete,true);
 });
+test('successful request without usage is counted as a usage miss',async()=>{
+ const h=fake();const f=create({history:h,forward:async()=>({status:200,metrics:{transportComplete:true,usageComplete:false,malformed:true}})});
+ const warn=console.warn;console.warn=()=>{};
+ try{await invoke(f);}finally{console.warn=warn;}
+ assert.equal(f.status().usageMissing,1);assert.equal(f.status().lastUsageMissing.malformed,true);
+});

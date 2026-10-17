@@ -6,7 +6,7 @@ const {WorkerDriver}=require('./worker-driver');
 const {RotationController}=require('./rotation-controller');
 const {RequestScheduler}=require('./request-scheduler');
 const {forwardWorker}=require('./forward-worker');
-const {createServer}=require('./coordinator-http');
+const {createServer,sanitizeStats}=require('./coordinator-http');
 const {authFileInfo}=require('./auth-maintenance');
 async function main(){
  const root=process.env.DUAL_ROOT||'/opt/ais2api/dual-runtime';
@@ -70,6 +70,7 @@ async function main(){
   halted:dispatch.halted,queue:scheduler.queue.length,scheduling:scheduler.status(),
   streamingMode:lastMode,ultra:tiers.status(dispatch.pool.ids),rotationThrottle:{...dispatch.rotationThrottle,intervalMs:300000},browserLease:browserLease?browserLease.status():null,runMode:browserLease?browserLease.modeStatus():null,
   analytics:recordedForward.status(),
+  gatewayRepair:{...sanitizeStats},
   retiredCleanup:cleanup.status(),
   quotaMode:"per-account-per-model",quotaLimits:require('./model-quota-ledger').TIER_LIMITS,
   slots:Object.fromEntries([...dispatch.slots].map(([slot,s])=>[slot,{

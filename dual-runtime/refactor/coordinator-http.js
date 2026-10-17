@@ -1,4 +1,6 @@
 'use strict';
+const {sanitizeRequest,SanitizeError}=require('./request-sanitizer');
+const sanitizeStats={repaired:0,rejected:0,lastRejected:null};
 const http=require('http'),crypto=require('crypto');
 function createServer({keys,models,scheduler,status,actions}){
  if(!Array.isArray(keys)||!keys.length||keys.some(k=>typeof k!=='string'||!k))throw Error('API keys required');
@@ -181,7 +183,20 @@ function createServer({keys,models,scheduler,status,actions}){
    const body=Buffer.concat(chunks);
    let parsed;try{parsed=JSON.parse(body);}catch{return json(res,400,{error:'Invalid JSON'});}
    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return json(res,400,{error:'JSON object required'});
-   scheduler.submit(url.pathname,body,res);
+   // Gateway repair: fix tool schemas Google rejects; refuse locally what cannot be fixed.
+   let outgoing=body;
+   try{
+    const fixed=sanitizeRequest(url.pathname,parsed);
+    if(fixed.changed){outgoing=Buffer.from(JSON.stringify(fixed.body));sanitizeStats.repaired++;}
+   }catch(e){
+    if(!(e instanceof SanitizeError))throw e;
+    sanitizeStats.rejected++;sanitizeStats.lastRejected={at:Date.now(),reason:e.message};
+    console.warn('[Gateway] rejected before upstream:',e.message);
+    const message='请求未发送到上游，网关无法自动修复：'+e.message;
+    return json(res,400,native?{error:{code:400,status:'INVALID_ARGUMENT',message}}:
+     {error:{message,type:'invalid_request_error',code:'gateway_unfixable_request'}});
+   }
+   scheduler.submit(url.pathname,outgoing,res);
   }catch(error){
    if(!res.destroyed){
     if(!res.headersSent)json(res,[400,413].includes(error.statusCode)?error.statusCode:503,
@@ -194,3 +209,4 @@ function createServer({keys,models,scheduler,status,actions}){
  return server;
 }
 module.exports={createServer};
+module.exports.sanitizeStats=sanitizeStats;

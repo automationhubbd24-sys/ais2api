@@ -83,7 +83,13 @@ class ResponseMetrics {
     if(this.stream){
      if(this.buffer && !this.discardLine)this.line(this.buffer);
      if(complete)this.line('');
-    }else if(complete && !this.limited)this.parse(this.buffer);
+    }else if(complete && !this.limited){
+     // Workers occasionally send SSE frames without an event-stream content type.
+     if(/^\s*(data:|:)/.test(this.buffer)){
+      const text=this.buffer;this.buffer='';this.stream=true;
+      this.feed(text);if(this.buffer)this.line(this.buffer);this.line('');
+     }else this.parse(this.buffer);
+    }
    }catch{this.malformed=true;}
    this.closed=true;this.complete=complete;this.durationMs=this.clock()-this.startedAt;
    this.buffer='';this.event=[];
