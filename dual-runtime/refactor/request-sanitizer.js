@@ -133,7 +133,26 @@ function sanitizeRequest(route, parsed) {
       checkName(f && f.name, 'functions[' + i + ']', names);
       fix(f, 'parameters', '函数 ' + f.name);
     }
+    const rf = parsed.response_format;
+    if (rf !== undefined && rf !== null) {
+      if (typeof rf !== 'object' || Array.isArray(rf)) fail('response_format 必须是对象');
+      if (!['text', 'json_object', 'json_schema'].includes(rf.type)) fail('response_format.type 不支持: ' + String(rf.type).slice(0, 40));
+      if (rf.type === 'json_schema') {
+        if (!rf.json_schema || typeof rf.json_schema !== 'object' || !rf.json_schema.schema) fail('response_format.json_schema.schema 缺失');
+        fix(rf.json_schema, 'schema', 'response_format');
+        if ('strict' in rf.json_schema) { delete rf.json_schema.strict; changed = true; }
+      }
+    }
   } else {
+    const gc = parsed.generationConfig || parsed.generation_config;
+    if (gc && typeof gc === 'object') {
+      for (const k of ['responseJsonSchema', 'response_json_schema']) if (gc[k] !== undefined) {
+        if (gc.responseSchema === undefined) gc.responseSchema = gc[k];
+        delete gc[k]; changed = true;
+      }
+      if (gc.response_schema !== undefined && gc.responseSchema === undefined) { gc.responseSchema = gc.response_schema; delete gc.response_schema; changed = true; }
+      if (gc.responseSchema !== undefined) fix(gc, 'responseSchema', 'responseSchema');
+    }
     if (parsed.tools !== undefined && !Array.isArray(parsed.tools)) fail('tools 必须是数组');
     for (const t of parsed.tools || []) {
       if (!t || typeof t !== 'object') continue;

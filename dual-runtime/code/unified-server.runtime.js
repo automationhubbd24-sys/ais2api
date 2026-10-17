@@ -413,6 +413,7 @@ return window.__tb?'ok':'wait';})()`;
         const decStruct = st => { const o = {}; for (const kv of ((st && st[0]) || [])) if (Array.isArray(kv)) o[kv[0]] = decVal(kv[1]); return o; };
         const TYP = { string: 1, number: 2, integer: 3, boolean: 4, array: 5, object: 6 };
         const encSchema = sc => { if (!sc || typeof sc !== 'object') return null; const a = [];
+          if (!sc.type && Array.isArray(sc.anyOf) && sc.anyOf.length) { const vs = sc.anyOf.filter(v => v && typeof v === 'object'); const nn = vs.filter(v => String(v.type || '').toLowerCase() !== 'null'); const pick = nn[0] || vs[0] || {}; const alt = nn.map(v => String(v.type || 'object').toLowerCase()); const desc = [sc.description || pick.description, alt.length > 1 ? 'Accepted types: ' + alt.join(' | ') : ''].filter(Boolean).join(' '); sc = { ...pick, description: desc || undefined, nullable: vs.length !== nn.length || sc.nullable || pick.nullable || undefined }; }
           a[0] = TYP[String(sc.type || 'object').toLowerCase()] || 6;
           if (sc.format) a[1] = sc.format; if (sc.description) a[2] = sc.description; if (sc.nullable != null) a[3] = !!sc.nullable;
           if (Array.isArray(sc.enum)) a[4] = sc.enum.map(String); if (sc.items) a[5] = encSchema(sc.items);
@@ -442,6 +443,8 @@ return window.__tb?'ok':'wait';})()`;
           cfg[5] = gc.topP != null ? gc.topP : 0.95;
           cfg[6] = gc.topK != null ? gc.topK : 64;
           if (gc.responseMimeType) cfg[7] = gc.responseMimeType;
+          const rsc = gc.responseSchema || gc.response_schema;
+          if (rsc) { cfg[7] = 'application/json'; cfg[8] = encSchema(rsc); }
           cfg[13] = 1;
           const th = [];
           th[0] = tc.includeThoughts === false ? 0 : 1;
@@ -2472,6 +2475,13 @@ class RequestHandler {
       maxOutputTokens: openaiBody.max_tokens,
       stopSequences: openaiBody.stop,
     };
+    const rf = openaiBody.response_format;
+    if (rf && (rf.type === "json_object" || rf.type === "json_schema")) {
+      generationConfig.responseMimeType = "application/json";
+      const js = rf.json_schema && rf.json_schema.schema;
+      if (rf.type === "json_schema" && js && typeof js === "object") generationConfig.responseSchema = js;
+      this.logger.info(`[Adapter] response_format=${rf.type} -> JSON mode${generationConfig.responseSchema ? " + schema" : ""}`);
+    }
 
     const extraBody = openaiBody.extra_body || {};
     let rawThinkingConfig =

@@ -1,6 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const {sanitizeRequest:s,SanitizeError}=require('./request-sanitizer');
+const sanitizeRequest=s;
 const oai=params=>({model:'m',messages:[],tools:[{type:'function',function:{name:'f',description:'d',parameters:params}}]});
 const P=r=>r.body.tools[0].function.parameters;
 test('lower-case JSON schema types are upper-cased',()=>{
@@ -43,4 +44,20 @@ test('native Gemini declarations are repaired too',()=>{
 });
 test('requests without tools are untouched',()=>{
  assert.equal(s('/v1/chat/completions',{model:'m',messages:[{role:'user',content:'hi'}]}).changed,false);
+});
+
+test('response_format json_schema is repaired and strict dropped', () => {
+  const r = sanitizeRequest('/v1/chat/completions', {response_format: {type: 'json_schema', json_schema: {name: 'x', strict: true, schema: {type: 'object', additionalProperties: false, properties: {a: {type: ['string', 'null']}}}}}});
+  assert.equal(r.changed, true);
+  assert.deepEqual(r.body.response_format.json_schema, {name: 'x', schema: {type: 'OBJECT', properties: {a: {type: 'STRING', nullable: true}}}});
+});
+
+test('unknown response_format type is rejected locally', () => {
+  assert.throws(() => sanitizeRequest('/v1/chat/completions', {response_format: {type: 'xml'}}), SanitizeError);
+  assert.throws(() => sanitizeRequest('/v1/chat/completions', {response_format: {type: 'json_schema'}}), SanitizeError);
+});
+
+test('native responseJsonSchema is moved to responseSchema and repaired', () => {
+  const r = sanitizeRequest('/v1beta/models/m:generateContent', {generationConfig: {responseJsonSchema: {type: 'object', properties: {n: {type: 'integer'}}}}});
+  assert.deepEqual(r.body.generationConfig, {responseSchema: {type: 'OBJECT', properties: {n: {type: 'INTEGER'}}}});
 });
