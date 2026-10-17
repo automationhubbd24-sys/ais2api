@@ -11,6 +11,7 @@ function metrics(input){
  for(const k of ['firstByteMs','firstContentMs','durationMs'])out[k]=numeric(input[k]);
  for(const k of ['usageComplete','transportComplete','streamDoneSeen','applicationError','captureLimited','malformed'])out[k]=input[k]===true;
  out.timingSource='coordinator-response-observer';
+ if(typeof input.errorKind==='string'&&/^[A-Za-z0-9_]{1,40}$/.test(input.errorKind))out.errorKind=input.errorKind;
  const u=input.usage;
  out.usage=null;
  if(u&&['gemini','openai'].includes(u.format)){

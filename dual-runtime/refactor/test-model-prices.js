@@ -60,3 +60,20 @@ test('historical request keeps admission-time price after price edit',async t=>{
  assert.equal(row.cost.amount,0.0036);assert.equal(row.cost.priceRevision,'1');
  assert.equal(s.get(model).revision,'2');
 });
+test('scheduled price takes effect at its time and survives reload',t=>{
+ const {file,s}=fixture(t);
+ s.set({model:'m',revision:0,price:price()});
+ const at=Date.now()+3600000;
+ s.set({model:'m',revision:1,effectiveAt:at,price:{...price(),inputPerMillion:4}});
+ assert.equal(s.get('m').inputPerMillion,2);
+ assert.equal(s.get('m',at).inputPerMillion,4);
+ assert.equal(s.snapshot().scheduled.m[0].effectiveAt,at);
+ const again=new S(file);
+ assert.equal(again.get('m').inputPerMillion,2);assert.equal(again.get('m',at+1).inputPerMillion,4);
+ // Saving a current price keeps the future change.
+ again.set({model:'m',revision:2,price:{...price(),inputPerMillion:3}});
+ assert.equal(again.get('m').inputPerMillion,3);assert.equal(again.get('m',at).inputPerMillion,4);
+ again.set({model:'m',revision:3,clearScheduled:true});
+ assert.equal(again.get('m',at).inputPerMillion,3);
+ assert.throws(()=>again.set({model:'m',revision:4,effectiveAt:Date.now()-1,price:price()}),/future/);
+});

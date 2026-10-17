@@ -21,7 +21,7 @@ async function main(){
  if(!history.status().ready)console.error('[Analytics] history unavailable; generation remains enabled');
  const {ModelPriceStore}=require('./model-price-store');
  const priceStore=new ModelPriceStore(path.join(root,'model-prices.json'));
- const recordedForward=createRecordedForward({history,forward:forwardWorker,priceFor:model=>priceStore.get(model)});
+ const recordedForward=createRecordedForward({history,forward:forwardWorker,priceFor:model=>priceStore.get(model),missLog:require('path').join(__dirname,'..','usage-missing.jsonl')});
  const scheduler=new RequestScheduler(dispatch,client,recordedForward,cfg.workers);
  const {QuarantineRecovery}=require('./quarantine-recovery');
  const recovery=new QuarantineRecovery(dispatch,scheduler,client,driver,rotation);

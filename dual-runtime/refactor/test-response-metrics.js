@@ -79,3 +79,12 @@ test('bare [DONE] without content type is not malformed',()=>{
  const r=new R();r.write('data: [DONE]\n\n');
  const m=r.finish();assert.equal(m.malformed,false);assert.equal(m.usageComplete,false);
 });
+
+test('upstream error category is kept without message text', () => {
+  const r = new R();
+  r.write(JSON.stringify({error: {code: 400, message: 'secret user text', status: 'INVALID_ARGUMENT'}}));
+  const m = r.finish();
+  assert.equal(m.applicationError, true);
+  assert.equal(m.errorKind, 'INVALID_ARGUMENT');
+  assert.equal(JSON.stringify(m).includes('secret'), false);
+});

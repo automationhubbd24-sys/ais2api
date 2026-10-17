@@ -17,7 +17,12 @@ class ResponseMetrics {
   const usage=normalizeUsage(obj);
   // Usage chunks are normally cumulative: never sum cumulative snapshots.
   if(usage)this.usage=usage;
-  if(obj.error)this.applicationError=true;
+  if(obj.error){
+   this.applicationError=true;
+   // Only the machine-readable category is kept; message text may echo user content.
+   const e=obj.error,st=e&&typeof e==='object'?(e.status||e.type||e.code):null;
+   if(!this.errorKind&&st!=null&&/^[A-Za-z0-9_]{1,40}$/.test(String(st)))this.errorKind=String(st);
+  }
   const text=(obj.choices||[]).some(c=>
    typeof c?.delta?.content==='string' && c.delta.content.length>0 ||
    typeof c?.message?.content==='string' && c.message.content.length>0) ||
@@ -99,7 +104,8 @@ class ResponseMetrics {
    firstByteMs:this.firstByteMs,firstContentMs:this.firstContentMs,durationMs:this.durationMs,
    timingSource:'coordinator-response-observer',transportComplete:this.complete,
    streamDoneSeen:this.done,applicationError:this.applicationError,
-   captureLimited:this.limited,malformed:this.malformed
+   captureLimited:this.limited,malformed:this.malformed,
+   ...(this.errorKind?{errorKind:this.errorKind}:{})
   };
  }
 }

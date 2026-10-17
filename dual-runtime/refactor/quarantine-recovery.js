@@ -112,7 +112,7 @@ class QuarantineRecovery {
     this.rotation.failures.set(slot,{reason:error.message,retryable:Boolean(state.recovery),retryAt:Date.now()+15000});
     try{this.dispatch.checkpoint();}catch{this.dispatch.halted=true;}
    }
-   console.error('[Recovery]',slot,error.code||error.name||'Error');
+   console.error('[Recovery]',slot,error.code||error.name||'Error',String(error.message||'').slice(0,300),'phase='+(this.dispatch.slots.get(slot)?.recovery?.phase||'-'));
   }finally{
    if(locked)this.rotation.running.delete(slot);
    if(lease)this.dispatch.operations.release(lease);

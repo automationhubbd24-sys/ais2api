@@ -112,7 +112,10 @@
  <label>输出单价<input id="price-output" type="number" min="0" max="1000000" step="any" placeholder="未知"></label>
  <label>原生思考 Token 计价<select id="price-reasoning-mode"><option value="unknown">未知，暂不估价</option><option value="separate">按思考单价另计</option><option value="included">已包含，不另计</option></select></label>
  <label>思考单价<input id="price-reasoning" type="number" min="0" max="1000000" step="any" placeholder="未知"></label>
- <button id="price-save" type="submit" class="primary" disabled>保存参考单价</button>
+ <label>生效时间（北京时间，留空=立即）<input id="price-effective" type="datetime-local"></label>
+<button id="price-save" type="submit" class="primary" disabled>保存参考单价</button>
+<button id="price-clear-scheduled" type="button" disabled>取消计划调价</button>
+<p id="price-scheduled" class="muted"></p>
  </form>
  
  </div>
