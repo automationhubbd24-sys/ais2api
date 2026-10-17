@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AIS2API Cookie 同步
 // @namespace    ais2api-cookie-sync
-// @version      1.3.0
+// @version      1.4.0
 // @description  在 AI Studio 页面一键把当前 Google 登录状态导入 / 更新到 AIS2API 账号池；可检查 Cookie 是否完整
 // @match        https://aistudio.google.com/*
 // @match        https://accounts.google.com/*
@@ -27,7 +27,14 @@ const SERVER=__SERVER__, KEY=__KEY__;
 const URLS=['https://aistudio.google.com/','https://accounts.google.com/','https://www.google.com/','https://myaccount.google.com/','https://ogs.google.com/','https://console.cloud.google.com/'];
 const SESSION=['SID','__Secure-1PSID','__Secure-3PSID'];
 const TS=['__Secure-1PSIDTS','__Secure-3PSIDTS'];
-const cfg=()=>({tier:GM_getValue('tier','standard'),alias:GM_getValue('alias',''),auto:GM_getValue('auto',false),minutes:GM_getValue('minutes',10)});
+// Account tiers, same as the server: standard / pro / ultra (Ultra 5x) / ultra20 (Ultra 20x).
+const TIERS=[['standard','普通','#eee'],['pro','Pro','#c8e6c9'],['ultra','Ultra 5x','#ffe082'],['ultra20','Ultra 20x','#ffb74d']];
+const tierInfo=t=>TIERS.find(x=>x[0]===t)||TIERS[0];
+const tierLabel=t=>tierInfo(t)[1];
+const normTier=v=>{const t=String(v||'').trim().toLowerCase().replace(/[\s_-]+/g,'');
+ const map={standard:'standard',free:'standard','普通':'standard','1':'standard',pro:'pro','2':'pro',ultra:'ultra',ultra5x:'ultra','5x':'ultra','3':'ultra',ultra20:'ultra20',ultra20x:'ultra20','20x':'ultra20','4':'ultra20'};
+ return map[t]||null;};
+const cfg=()=>({tier:normTier(GM_getValue('tier','standard'))||'standard',alias:GM_getValue('alias',''),auto:GM_getValue('auto',false),minutes:GM_getValue('minutes',10)});
 
 function toast(msg,bad){
  const el=document.createElement('div');el.textContent=msg;
@@ -174,7 +181,7 @@ async function sync(mode,quiet){
   if(status===200){
    GM_setValue('lastFp',fp);GM_setValue('lastAt',Date.now());
    const name=d.alias?' · '+d.alias:'';
-   if(!quiet||!d.updated)toast((d.updated?'已更新账号 #':'已导入新账号 #')+d.index+name+(d.tier==='ultra'?'（Ultra）':'（普通）')+(d.note?'\n'+d.note:'')+(d.verifying?'\n正在服务器上验证登录，约 30 秒～几分钟…':''));
+   if(!quiet||!d.updated)toast((d.updated?'已更新账号 #':'已导入新账号 #')+d.index+name+'（'+tierLabel(d.tier)+'）'+(d.note?'\n'+d.note:'')+(d.verifying?'\n正在服务器上验证登录，约 30 秒～几分钟…':''));
    if(d.verifying&&!quiet)waitVerify(d.index);
    else console.info('[AIS2API] 已同步账号 #'+d.index);
   }else if(quiet&&status===404){console.info('[AIS2API] 当前账号未导入，自动同步跳过');}
@@ -191,8 +198,8 @@ function initButtons(){
  bar.style.cssText='position:fixed;z-index:2147483646;right:8px;bottom:24px;background:#fff;border:1px solid #aaa;border-radius:10px;padding:6px;display:flex;flex-wrap:wrap;gap:6px;max-width:94vw;font:13px system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.2)';
  const mk=(label,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.style.cssText='font:13px system-ui;padding:8px 10px;color:#111;background:#eee;border:1px solid #bbb;border-radius:6px';b.onclick=fn;return b;};
  const body=document.createElement('div');body.style.cssText='display:flex;flex-wrap:wrap;gap:6px;align-items:center';
- const tierBtn=mk('',()=>{GM_setValue('tier',cfg().tier==='ultra'?'standard':'ultra');paint();});
- const paint=()=>{tierBtn.textContent='分类：'+(cfg().tier==='ultra'?'Ultra':'普通');tierBtn.style.background=cfg().tier==='ultra'?'#ffe082':'#eee';};paint();
+ const tierBtn=mk('',()=>{const i=TIERS.findIndex(x=>x[0]===cfg().tier);GM_setValue('tier',TIERS[(i+1)%TIERS.length][0]);paint();toast('新账号分类：'+tierLabel(cfg().tier)+'（只影响新导入的账号）');});
+ const paint=()=>{const t=tierInfo(cfg().tier);tierBtn.textContent='分类：'+t[1];tierBtn.style.background=t[2];};paint();
  body.append(mk('检查',()=>sync('check',false)),mk('导入',()=>sync('upsert',false)),tierBtn,
   mk('名称',()=>{const a=prompt('新账号名称（可留空，最多 40 字）',cfg().alias);if(a!==null){GM_setValue('alias',a.trim().slice(0,40));toast('名称：'+(cfg().alias||'（空）'));}}));
  const fold=mk('AIS',()=>{const hide=body.style.display!=='none';body.style.display=hide?'none':'flex';GM_setValue('folded',hide);});
@@ -204,13 +211,13 @@ function initButtons(){
 if(document.body)initButtons();else window.addEventListener('DOMContentLoaded',initButtons,{once:true});
 GM_registerMenuCommand('检查 Cookie（不导入）',()=>sync('check',false));
 GM_registerMenuCommand('导入 / 更新当前账号',()=>sync('upsert',false));
-GM_registerMenuCommand('设置新账号的分类和名称（当前：'+(cfg().tier==='ultra'?'Ultra':'普通')+'）',()=>{
+GM_registerMenuCommand('设置新账号的分类和名称（当前：'+tierLabel(cfg().tier)+'）',()=>{
  const c=cfg();
- const t=prompt('新账号分类：输入 ultra 或 standard（只影响新导入的账号，已导入的账号不改）',c.tier);
- if(t===null)return;GM_setValue('tier',t.trim().toLowerCase()==='ultra'?'ultra':'standard');
+ const t=prompt('新账号分类（只影响新导入的账号，已导入的账号不改）：\n1 = 普通\n2 = Pro\n3 = Ultra 5x\n4 = Ultra 20x\n也可以直接输入 standard / pro / ultra / ultra20',String(TIERS.findIndex(x=>x[0]===c.tier)+1));
+ if(t===null)return;const nt=normTier(t);if(!nt){toast('分类无效：'+t+'，没有修改',true);return;}GM_setValue('tier',nt);
  const a=prompt('新账号名称（可留空，最多 40 字）',c.alias);
  if(a!==null)GM_setValue('alias',a.trim().slice(0,40));
- const n=cfg();toast('已保存：'+(n.tier==='ultra'?'Ultra':'普通')+(n.alias?' · '+n.alias:''));
+ const n=cfg();toast('已保存：'+tierLabel(n.tier)+(n.alias?' · '+n.alias:''));
 });
 GM_registerMenuCommand((cfg().auto?'关闭':'开启')+'自动同步（仅更新已导入账号）',()=>{
  const on=!cfg().auto;GM_setValue('auto',on);
