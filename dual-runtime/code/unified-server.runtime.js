@@ -511,16 +511,17 @@ return window.__tb?'ok':'wait';})()`;
             const g = JSON.parse(a[1] || '{}');
             const { body, ht } = buildBody(mm[1], g);
             await gcbInstall();
+            const gcbT0 = Date.now();
             const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ',' + JSON.stringify(gcbKey) + ',' + JSON.stringify(gcbHx) + ')';
             const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise((_, rj) => setTimeout(() => rj(new Error('GenerateContent timeout')), 600000))]);
             const r = JSON.parse(raw);
-            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
+            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
             const arr0 = JSON.parse(r.t); const isChunk = x => Array.isArray(x) && Array.isArray(x[0]) && Array.isArray(x[0][0]) && Array.isArray(x[0][0][0]) && x[0][0][0][1] === 'model'; const arr = Array.isArray(arr0) && arr0.some(isChunk) ? arr0 : (Array.isArray(arr0) && Array.isArray(arr0[0]) ? arr0[0] : []);
             const chunks = arr.map(convChunk).filter(c => c && c.candidates && c.candidates.length);
             let out;
             if (streamed) { const tail = arr.length && !isChunk(arr[arr.length - 1]) ? arr[arr.length - 1] : null; out = '[[' + chunks.map(c => JSON.stringify([JSON.stringify(c)])).concat(tail ? [JSON.stringify(tail)] : []).join(',') + ']]'; }
             else out = JSON.stringify([JSON.stringify(merge(chunks))]);
-            log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length + ' tier=' + (r.tier || '-'));
+            log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' bytes=' + String(r.t || '').length + ' finish=' + ((chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'));
             return route.fulfill({ status: 200, contentType: 'application/json+protobuf; charset=UTF-8', body: out });
           } catch (e) {
             log.warn('[GCBridge] error ' + e.message);
@@ -2259,9 +2260,33 @@ class RequestHandler {
     const atUsage = {complete: true, sum: {}};
     const atAddUsage = (resp) => { const u = resp && resp.usageMetadata; if (!u || typeof u !== 'object') { atUsage.complete = false; return; } for (const key of ['promptTokenCount','candidatesTokenCount','thoughtsTokenCount','cachedContentTokenCount','totalTokenCount']) { if (Number.isSafeInteger(u[key]) && u[key] >= 0) atUsage.sum[key] = (atUsage.sum[key] || 0) + u[key]; } };
     atAddUsage(current);
+    // Diagnostics only: shape and size of each round, never the content itself.
+    let roundStartedAt = null;
+    const atRoundLog = (round, resp, r) => {
+      try {
+        const c = resp && resp.candidates && resp.candidates[0];
+        const parts = (c && c.content && Array.isArray(c.content.parts)) ? c.content.parts : [];
+        let textParts = 0, textChars = 0, thoughtParts = 0, thoughtChars = 0; const calls = [];
+        for (const p of parts) {
+          if (p && p.functionCall) calls.push(String(p.functionCall.name || '?').slice(0, 40) + (p.functionCall.args && typeof p.functionCall.args.answer === 'string' ? '(answer=' + p.functionCall.args.answer.length + ')' : '(no-answer)'));
+          else if (p && typeof p.text === 'string') { if (p.thought) { thoughtParts++; thoughtChars += p.text.length; } else { textParts++; textChars += p.text.length; } }
+        }
+        const u = (resp && resp.usageMetadata) || {};
+        this.logger.info('[AT] round ' + round + ' model=' + atRealModelName + ' req=' + requestId +
+          ' ms=' + (roundStartedAt ? Date.now() - roundStartedAt : '-') +
+          ' candidates=' + ((resp && resp.candidates) ? resp.candidates.length : 0) +
+          ' finish=' + ((c && c.finishReason) || '-') + ' parts=' + parts.length +
+          ' text=' + textParts + '/' + textChars + 'ch thought=' + thoughtParts + '/' + thoughtChars + 'ch' +
+          ' calls=[' + calls.join(',') + ']' +
+          ' emit_answer=' + (r.found ? 'yes' : 'no') +
+          ' tok(in/out/think)=' + (u.promptTokenCount ?? '-') + '/' + (u.candidatesTokenCount ?? '-') + '/' + (u.thoughtsTokenCount ?? '-') +
+          (resp && resp.promptFeedback && resp.promptFeedback.blockReason ? ' blocked=' + resp.promptFeedback.blockReason : ''));
+      } catch (e) { this.logger.warn('[AT] round log failed: ' + e.message); }
+    };
     while (attempt <= AT.AT_MAX_ATTEMPTS) {
       attempt++;
       const r = AT.atExtractAnswer(current);
+      atRoundLog(attempt, current, r);
       if (r.found ? /^STOP$/.test(r.finishReason || String()) : false) {
         if (atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount)) r.usageMetadata = atUsage.sum;
         else this.logger.warn("[AT] usage missing in at least one round; tokens for this request will be unknown");
@@ -2269,7 +2294,8 @@ class RequestHandler {
         return r;
       }
       if (attempt > AT.AT_MAX_ATTEMPTS) break;
-      if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) return null;
+      if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) { this.logger.warn('[AT] giving up: finish=' + r.finishReason + ' on round ' + attempt); return null; }
+      this.logger.info('[AT] continuing because ' + (r.found ? 'emit_answer finish=' + r.finishReason : 'no emit_answer (finish=' + (r.finishReason || '-') + ')'));
       lastAnswer = r.answer || lastAnswer;
       if (typeof this._atWaitOperationDone !== /function/.source) throw Error(/AT_cleanup_hook_missing/.source);
       if (!await this._atWaitOperationDone(previousOperationId)) throw Error(/AT_previous_operation_not_settled/.source);
@@ -2278,7 +2304,8 @@ class RequestHandler {
       const contId = this._generateRequestId();
       const contQueue = this.connectionRegistry.createMessageQueue(contId);
       try {
-        this.logger.info("[AT] continuation attempt " + attempt + "/" + AT.AT_MAX_ATTEMPTS);
+        this.logger.info("[AT] continuation attempt " + attempt + "/" + AT.AT_MAX_ATTEMPTS + " bodyChars=" + JSON.stringify(contBody).length + " prevAnswerChars=" + (lastAnswer ? lastAnswer.length : 0));
+        roundStartedAt = Date.now();
         this._forwardRequest({
           path: `/v1beta/models/${atRealModelName}:generateContent`,
           method: "POST",
