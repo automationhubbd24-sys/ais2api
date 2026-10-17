@@ -501,6 +501,8 @@ return window.__tb?'ok':'wait';})()`;
           try { a = JSON.parse(req.postData() || ''); } catch {}
           const mm = Array.isArray(a) && typeof a[0] === 'string' && a[0].match(/models\/([^:/?]+):(stream)?generateContent/i);
           if (!mm) return route.continue();
+          // Legacy path: models Google no longer serves via MakerSuite GenerateContent still answer through the page's original Proxy call
+          if ((process.env.GCB_LEGACY_MODELS || 'gemini-3.7-flash').split(',').map(x => x.trim()).filter(Boolean).some(x => mm[1] === x || mm[1].startsWith(x + '-'))) { log.info('[GCBridge] ' + mm[1] + ' legacy proxy path'); return route.continue(); }
           const streamed = /ProxyStreamedCall/.test(req.url());
           try {
             const g = JSON.parse(a[1] || '{}');
