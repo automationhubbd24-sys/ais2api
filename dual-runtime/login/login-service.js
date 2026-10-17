@@ -37,7 +37,7 @@ function writeAccount(storage,email,tier,alias){
  const names=fs.readdirSync(AUTH).filter(n=>/^auth-\d+\.json$/.test(n));
  if(names.length>=50)throw Error('账号数量已达上限');
  const index=Math.max(0,...names.map(n=>Number(n.match(/\d+/)[0])))+1;
- const content=JSON.stringify({cookies,origins,accountName:email,...(tier==='ultra'?{accountTier:'ultra'}:{}),...(alias?{displayName:alias}:{})});
+ const content=JSON.stringify({cookies,origins,accountName:email,...(tier==='ultra'||tier==='pro'?{accountTier:tier}:{}),...(alias?{displayName:alias}:{})});
  if(Buffer.byteLength(content)>262144)throw Error('登录数据过大');
  const file=path.join(AUTH,'auth-'+index+'.json');
  const fd=fs.openSync(file,'wx',0o600);
@@ -83,7 +83,7 @@ function alreadyImported(email){
 }
 function startJob(email,password,opts={}){
  const id=crypto.randomUUID(),name='ais-login-'+id.slice(0,8);
- const job={id,name,email,tier:opts.tier==='ultra'?'ultra':'standard',alias:String(opts.alias||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,40),target:opts.target||null,auto:!!opts.auto,status:'running',step:'starting',need:null,message:'',account:null,created:Date.now(),updated:Date.now()};
+ const job={id,name,email,tier:['pro','ultra'].includes(opts.tier)?opts.tier:'standard',alias:String(opts.alias||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,40),target:opts.target||null,auto:!!opts.auto,status:'running',step:'starting',need:null,message:'',account:null,created:Date.now(),updated:Date.now()};
  jobs.set(id,job);
  (async()=>{
  try{job.step='pausing_worker';await leaseAcquire('login:'+id.slice(0,8));job.leased=true;}

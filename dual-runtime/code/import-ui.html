@@ -52,7 +52,7 @@ ol.steps{margin:0;padding-left:20px}ol.steps li{margin:0 0 12px}ol.steps code{ba
 <label class="f" for="le">邮箱</label><input id="le" type="email" autocomplete="off" autocapitalize="off" spellcheck="false">
 <label class="f" for="lp">密码</label><input id="lp" type="password" autocomplete="new-password">
 <label class="f" for="lname">账号名称（可选）</label><input id="lname" maxlength="40" autocomplete="off" placeholder="例如：Ultra 主号">
-<label class="f" for="ltier">账号分类</label><select id="ltier"><option value="standard">普通账号（参与轮换）</option><option value="ultra">Ultra 账号（可用 gemini-4-argon）</option></select>
+<label class="f" for="ltier">账号分类</label><select id="ltier"><option value="standard">普通账号（参与轮换）</option><option value="pro">Pro 账号（可用 gemini-4-argon）</option><option value="ultra">Ultra 账号（可用 gemini-4-argon）</option></select>
 <label class="chk"><input id="lrem" type="checkbox" checked>记住密码，失效后自动重新登录</label>
 <div class="btns"><button id="lgo" class="p" type="button">登录并添加</button><button id="lcancel" type="button" disabled>取消</button></div>
 <div id="lneed" hidden><label class="f" id="lprompt" for="lv"></label><div class="row"><input id="lv" autocomplete="one-time-code"><button id="lsend" class="p" type="button" style="flex:none">提交</button></div></div>
@@ -72,7 +72,7 @@ ol.steps{margin:0;padding-left:20px}ol.steps li{margin:0 0 12px}ol.steps code{ba
 <label class="f" for="raw">或粘贴</label>
 <textarea id="raw" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="[…] 或 {cookies:[…],origins:[…]}"></textarea>
 <label class="f" for="cname">账号名称（可选）</label><input id="cname" maxlength="40" autocomplete="off" placeholder="例如：Ultra 主号">
-<label class="f" for="ctier">账号分类</label><select id="ctier"><option value="standard">普通账号（参与轮换）</option><option value="ultra">Ultra 账号（可用 gemini-4-argon）</option></select>
+<label class="f" for="ctier">账号分类</label><select id="ctier"><option value="standard">普通账号（参与轮换）</option><option value="pro">Pro 账号（可用 gemini-4-argon）</option><option value="ultra">Ultra 账号（可用 gemini-4-argon）</option></select>
 <div class="btns"><button id="convert" type="button">校验</button><button id="send" class="p" type="button" disabled>导入</button><button id="clear" type="button">清空</button></div>
 <pre id="result" class="out" role="status" aria-live="polite"></pre></div>
 </section>
@@ -82,7 +82,7 @@ ol.steps{margin:0;padding-left:20px}ol.steps li{margin:0 0 12px}ol.steps code{ba
 <label class="f" for="taurl">应用链接</label><input id="taurl" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://ai.studio/apps/…">
 <div class="btns"><button id="tasave" class="p" type="button">保存</button><button id="taapply" type="button">立即生效</button></div>
 <pre id="tares" class="out"></pre></div>
-<div class="card"><div class="sw"><div><b>Ultra 专用实例</b><div id="usub" class="sub"></div></div><input id="uon" type="checkbox" aria-label="Ultra 专用实例"></div>
+<div class="card"><div class="sw"><div><b>Pro/Ultra 专用实例</b><div id="usub" class="sub"></div></div><input id="uon" type="checkbox" aria-label="Pro/Ultra 专用实例"></div>
 <label class="f" for="uslot">专用实例</label><select id="uslot"><option value="A">实例 A</option><option value="B">实例 B</option></select>
 <div id="ulist" class="sub" style="margin-top:8px"></div><pre id="ures" class="out"></pre></div>
 <div class="card"><div class="sw"><div><b>单实例运行</b><div id="msub" class="sub"></div></div><input id="msingle" type="checkbox" aria-label="单实例运行"></div><pre id="mres" class="out"></pre></div>
@@ -201,7 +201,7 @@ $("send").onclick=async()=>{
  try{
   const r=await fetch("/api/import-account",{method:"POST",credentials:"same-origin",redirect:"error",headers:{"Content-Type":"application/json","X-Import-Token":token,"X-Account-Tier":$("ctier").value,"X-Account-Alias":encodeURIComponent($("cname").value.trim())},body:JSON.stringify(prepared)});
   const d=await r.json();
-  if(r.ok){$("raw").value="";$("file").value="";$("cname").value="";$("result").textContent="导入成功：账号 #"+d.index+(d.alias?" · "+d.alias:"")+(d.tier==="ultra"?"（Ultra）":"");uload();}
+  if(r.ok){$("raw").value="";$("file").value="";$("cname").value="";$("result").textContent="导入成功：账号 #"+d.index+(d.alias?" · "+d.alias:"")+(d.tier==="ultra"?"（Ultra）":d.tier==="pro"?"（Pro）":"");uload();}
   else $("result").textContent=d.error||"服务器拒绝导入";
  }catch{$("result").textContent="未能确认导入结果。请先检查首页账号列表，避免重复导入。";}
  finally{busy=false;reset();for(const id of ["convert","raw","file","clear"])$(id).disabled=false;}
@@ -311,18 +311,18 @@ $("msingle").onchange=async()=>{const single=$("msingle").checked;
  if(single&&!confirm("停用一个实例，只保留一个处理请求。继续？")){$("msingle").checked=false;return;}
  $("msingle").disabled=true;const {ok,d}=await lpost("/api/run-mode",{single}).catch(()=>({ok:false,d:{}}));
  if(!ok){$("mres").textContent=d.error||"切换失败";$("msingle").checked=!single;$("msingle").disabled=false;return;}mshow(d);};
-// ---- Ultra dedicated instance ----
+// ---- Pro/Ultra dedicated instance ----
 let utimer=null;
 function ushow(u){
  $("uon").checked=u.enabled;$("uslot").value=u.slot;$("uon").disabled=false;$("uslot").disabled=false;
- const n=(u.ultraAccounts||[]).length;
- $("usub").textContent=!u.enabled?"已关闭：账号不按分类分配，Ultra 账号也参与普通轮换":u.single?"已开启，但单实例模式下暂不生效":"实例 "+u.slot+" 只用 Ultra 账号，另一实例只用普通账号";
- $("ulist").textContent=n?"Ultra 账号："+u.ultraAccounts.map(x=>"#"+x).join("、"):"还没有 Ultra 账号。登录或导入时选择分类，或在管理后台账号详情里修改。";
+ const ul=u.ultraAccounts||[],pl=u.proAccounts||[],n=ul.length+pl.length;
+ $("usub").textContent=!u.enabled?"已关闭：账号不按分类分配，Pro/Ultra 账号也参与普通轮换":u.single?"已开启，但单实例模式下暂不生效":"实例 "+u.slot+" 只用 Pro/Ultra 账号，另一实例只用普通账号";
+ $("ulist").textContent=n?[ul.length?"Ultra 账号："+ul.map(x=>"#"+x).join("、"):"",pl.length?"Pro 账号："+pl.map(x=>"#"+x).join("、"):""].filter(Boolean).join("；"):"还没有 Pro/Ultra 账号。登录或导入时选择分类，或在管理后台账号详情里修改。";
 }
 async function uload(){clearTimeout(utimer);try{const r=await fetch("/api/ultra-mode",{credentials:"same-origin",redirect:"error"});const d=await r.json();if(r.ok)ushow(d);}catch{}utimer=setTimeout(uload,20000);}
 async function usave(){
  const enabled=$("uon").checked,slot=$("uslot").value;
- if(enabled&&!confirm("开启后实例 "+slot+" 只用 Ultra 账号；空闲时会自动换成符合分类的账号。继续？")){$("uon").checked=false;return;}
+ if(enabled&&!confirm("开启后实例 "+slot+" 只用 Pro/Ultra 账号；空闲时会自动换成符合分类的账号。继续？")){$("uon").checked=false;return;}
  $("uon").disabled=true;$("uslot").disabled=true;
  const {ok,d}=await lpost("/api/ultra-mode",{enabled,slot}).catch(()=>({ok:false,d:{}}));
  $("ures").textContent=ok?"已保存":(d.error||"保存失败");if(ok)ushow(d);else uload();}

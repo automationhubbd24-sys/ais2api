@@ -1,6 +1,6 @@
  'use strict';
 const WINDOW=86400000;
-const LIMITS=Object.freeze({flash:100,pro:10,ultra:null});
+const LIMITS=Object.freeze({flash:100,pro:10,ultra:10});
 const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
 const object=o=>Boolean(o)&&typeof o==='object'&&!Array.isArray(o);
 const integer=n=>Number.isSafeInteger(n)&&n>=0;
@@ -35,6 +35,7 @@ function validate(raw){
 }
 class ModelQuotaLedger{
  constructor(raw={version:1,accounts:{}},clock=Date.now){this.data=validate(raw);this.clock=clock;this.unlimited=()=>false;}
+ // Every account class (standard/pro/ultra) uses the same per-model caps.
  limitFor(id,family){return this.unlimited(id)?null:LIMITS[family];}
  account(id,create=false){
   const key=accountKey(id);

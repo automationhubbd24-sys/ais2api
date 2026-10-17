@@ -120,7 +120,7 @@ function renderAccountRows(d=state){
  for(const a of accounts.slice((accountPage-1)*size,accountPage*size)){
   const row=el('tr'),identity=el('td'),name=el('button',undefined,'account-name account-name-button'),text=el('div',undefined,'account-identity');
   name.type='button';name.setAttribute('aria-label','查看账号 '+a.id+' 的额度详情');name.addEventListener('click',()=>openAccount(a.id));
-  const nameLine=el('div',undefined,'account-title-line');nameLine.append(el('strong',a.name||'未命名账号'));if(a.tier==='ultra')nameLine.append(el('span','Ultra','badge ultra-badge'));
+  const nameLine=el('div',undefined,'account-title-line');nameLine.append(el('strong',a.name||'未命名账号'));if(a.tier==='ultra')nameLine.append(el('span','Ultra','badge ultra-badge'));else if(a.tier==='pro')nameLine.append(el('span','Pro','badge pro-badge'));
   text.append(nameLine,el('small','账号 #'+a.id));name.append(el('span',String(a.name||a.id).slice(0,1).toUpperCase(),'avatar'),text);identity.append(name);row.append(identity);
   const owner=el('td');owner.append(el('span',a.owner?'实例 '+a.owner:'未分配',a.owner?'instance-chip':'muted'));row.append(owner);
   const quotaCell=el('td'),quotaBox=el('button',undefined,'account-model-quota'),models=Object.values(a.quota?.models||{}),known=models.map(quotaFraction).filter(value=>value!==null);

@@ -38,9 +38,9 @@ async function main(){
  let browserLeaseRef=null;
  const tiers=new AccountTiers({authDir:'/opt/ais2api/auth',file:path.join(root,'ultra-mode.json'),isSingle:()=>browserLeaseRef?.mode?.single===true});
  dispatch.slotAllows=(slot,id)=>tiers.allowed(slot,id);
- dispatch.slotRule=slot=>!tiers.active()?'':slot===tiers.mode.slot?'实例 '+slot+' 只用 Ultra 账号':'实例 '+slot+' 不使用 Ultra 账号';
- dispatch.quotas.unlimited=id=>tiers.isUltra(id);
+ dispatch.slotRule=slot=>!tiers.active()?'':slot===tiers.mode.slot?'实例 '+slot+' 只用 Pro/Ultra 账号':'实例 '+slot+' 不使用 Pro/Ultra 账号';
  routing.isUltra=id=>tiers.isUltra(id);
+ routing.isPremium=id=>tiers.isPremium(id);
  scheduler.resolveModel=(route,body,options)=>routing.resolve(route,body,options);
  dispatch.quotaExhausted=(slot,plan)=>routing.exhausted(slot,plan);
  let stopping=false;

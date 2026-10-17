@@ -31,12 +31,14 @@ test('rotation candidates follow the slot rule',()=>{
  const d=new DispatchCore(pool,()=>{});for(const id of pool.ids)d.quotas.account(id,true);d.slotAllows=(s,id)=>tiers.allowed(s,id);
  a.equal(d.rotationCandidate(undefined,undefined,'B'),3);a.equal(d.rotationCandidate(undefined,undefined,'A'),4);
 });
-test('ultra accounts have no count limit but keep 429 cooldown',()=>{
- const q=new ModelQuotaLedger();q.unlimited=id=>id===3;
- for(let i=0;i<150;i++)a.equal(q.charge(3,'gemini-4-argon','ultra'),true);
- const v=q.view(3,'gemini-4-argon','ultra');a.equal(v.limit,null);a.equal(v.used,150);a.equal(v.allowed,true);
- q.defer(3,'gemini-4-argon','ultra',Date.now()+60000);a.equal(q.view(3,'gemini-4-argon','ultra').allowed,false);
+test('every account class has the same caps (flash 100, pro 10, premium 10) and keeps 429 cooldown',()=>{
+ const q=new ModelQuotaLedger();
+ for(let i=0;i<10;i++)a.equal(q.charge(3,'gemini-4-argon','ultra'),true);
+ a.equal(q.charge(3,'gemini-4-argon','ultra'),false);
+ const v=q.view(3,'gemini-4-argon','ultra');a.equal(v.limit,10);a.equal(v.used,10);a.equal(v.allowed,false);
+ for(let i=0;i<10;i++)q.charge(3,'gemini-3.1-pro-preview','pro');a.equal(q.charge(3,'gemini-3.1-pro-preview','pro'),false);
  for(let i=0;i<100;i++)q.charge(1,'gemini-3.7-flash','flash');a.equal(q.view(1,'gemini-3.7-flash','flash').allowed,false);
+ q.defer(4,'gemini-4-argon','ultra',Date.now()+60000);a.equal(q.view(4,'gemini-4-argon','ultra').allowed,false);
 });
 test('request counts per Beijing day, 7 and 30 days with 429',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hist-'));
@@ -57,4 +59,40 @@ test('account alias is stored separately from login email and can be cleared',()
  a.throws(()=>tiers.setAlias(2,'x'.repeat(41)),/40/);
  tiers.setAlias(2,'');a.equal('displayName' in JSON.parse(fs.readFileSync(path.join(dir,'auth-2.json'))),false);
  a.equal((fs.statSync(path.join(dir,'auth-2.json')).mode&0o777),0o600);
+});
+test('pro accounts share the premium group with ultra but keep normal count limits',()=>{
+ const {dir,tiers}=setup();tiers.setTier(2,'pro');tiers.setTier(3,'ultra');
+ a.equal(JSON.parse(fs.readFileSync(path.join(dir,'auth-2.json'))).accountTier,'pro');
+ a.equal(tiers.isPremium(2),true);a.equal(tiers.isPremium(3),true);a.equal(tiers.isPremium(1),false);a.equal(tiers.isUltra(2),false);
+ tiers.setMode({enabled:true,slot:'B'});
+ a.equal(tiers.allowed('B',2),true);a.equal(tiers.allowed('B',3),true);a.equal(tiers.allowed('B',1),false);a.equal(tiers.allowed('A',2),false);
+ const st=tiers.status([1,2,3,4]);a.deepEqual(st.ultraAccounts,[3]);a.deepEqual(st.proAccounts,[2]);a.deepEqual(st.premiumAccounts,[2,3]);
+ a.throws(()=>tiers.setTier(1,'max'),/standard、pro 或 ultra/);
+ const q=new ModelQuotaLedger();
+ for(const id of [1,2,3]){a.equal(q.view(id,'gemini-4-argon','ultra').limit,10);a.equal(q.view(id,'gemini-3.8-flash','flash').limit,100);a.equal(q.view(id,'gemini-3.1-pro-preview','pro').limit,10);}
+});
+test('premium model routing accepts pro and ultra accounts only',()=>{
+ const {CatalogRouting}=require('./catalog-routing');
+ const {tiers}=setup();tiers.setTier(2,'pro');
+ const pool=new AccountPool([1,2,3,4]);pool.slots.set('A',{current:1,pending:null});pool.owners.set(1,'A');pool.slots.set('B',{current:2,pending:null});pool.owners.set(2,'B');
+ const d=new DispatchCore(pool,()=>{});for(const id of pool.ids)d.quotas.account(id,true);
+ const r=new CatalogRouting(d,{cache:new Map()},{'gemini-4-argon':{quotaFamily:'ultra',antiTruncation:false}});
+ r.isUltra=id=>tiers.isUltra(id);r.isPremium=id=>tiers.isPremium(id);r.eligible=()=>true;
+ const plan=r.resolve('/v1beta/models/gemini-4-argon:generateContent',{});
+ a.equal(plan.eligible('B',2),true);a.equal(plan.eligible('A',1),false);
+ tiers.setTier(2,'standard');
+ a.throws(()=>r.resolve('/v1beta/models/gemini-4-argon:generateContent',{}),/Pro or Ultra/);
+});
+test('a queued premium request makes a standard slot rotate to a free pro/ultra account',()=>{
+ const {CatalogRouting}=require('./catalog-routing');
+ const {tiers}=setup();tiers.setTier(4,'ultra');
+ const pool=new AccountPool([1,2,3,4]);pool.slots.set('A',{current:1,pending:null});pool.owners.set(1,'A');pool.slots.set('B',{current:2,pending:null});pool.owners.set(2,'B');
+ const d=new DispatchCore(pool,()=>{});for(const id of pool.ids)d.quotas.account(id,true);
+ const r=new CatalogRouting(d,{cache:new Map()},{'gemini-4-argon':{quotaFamily:'ultra',antiTruncation:false}});
+ r.isUltra=id=>tiers.isUltra(id);r.isPremium=id=>tiers.isPremium(id);
+ const plan={model:'gemini-4-argon',quotaFamily:'ultra'};
+ a.equal(r.exhausted('B',plan),true);
+ d.slots.set('B',{active:0,ready:true});
+ const rp=r.rotationPlan('B',[plan]);a.equal(rp?.target,4);
+ pool.slots.set('B',{current:4,pending:null});a.equal(r.exhausted('B',plan),false);
 });

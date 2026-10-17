@@ -2,7 +2,7 @@
 const {parseRequestModel}=require("./request-model");
 class CatalogRouting {
  constructor(dispatch,catalogs,policies={}){
-  this.dispatch=dispatch;this.catalogs=catalogs;this.policies=new Map();this.isUltra=()=>false;
+  this.dispatch=dispatch;this.catalogs=catalogs;this.policies=new Map();this.isUltra=()=>false;this.isPremium=id=>this.isUltra(id);
   if(!policies||typeof policies!=="object"||Array.isArray(policies))throw Error("Invalid model policies");
   for(const [id,p] of Object.entries(policies)){
    if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id)||!p||
@@ -31,24 +31,24 @@ class CatalogRouting {
   catch{throw Object.assign(Error("Invalid request model"),{statusCode:400});}
   const policy=this.policies.get(request.upstreamId);
   if(!policy)throw Object.assign(Error("Explicit quota policy required for this model"),{statusCode:422});
-  if(policy.quotaFamily==="ultra"&&!this.dispatch.pool.ids.some(id=>this.isUltra(id)&&!this.dispatch.accountFlags[id]))throw Object.assign(Error("This model needs an Ultra account; none is available in the account pool"),{statusCode:503});
+  if(policy.quotaFamily==="ultra"&&!this.dispatch.pool.ids.some(id=>this.isPremium(id)&&!this.dispatch.accountFlags[id]))throw Object.assign(Error("This model needs a Pro or Ultra account; none is available in the account pool"),{statusCode:503});
   if(policy.quotaFamily==="ultra"){
    // Every Ultra account is cooling down for this model (Google said when it resets): answer now with 429
    // and the reset time instead of holding the request in the queue until it times out.
    const now=Date.now();let soonest=Infinity;
    for(const id of this.dispatch.pool.ids){
-    if(!this.isUltra(id)||this.dispatch.accountFlags[id])continue;
+    if(!this.isPremium(id)||this.dispatch.accountFlags[id])continue;
     const q=this.dispatch.quotas.view(id,request.upstreamId,'ultra');
     soonest=Math.min(soonest,Math.max(q.cooldownUntil||0,this.dispatch.pool.cooldowns.get(id)||0));
    }
    if(soonest>now+120000&&soonest!==Infinity){
     const at=new Date(soonest+8*3600000).toISOString().slice(0,16).replace('T',' ');
-    throw Object.assign(Error("All Ultra accounts are rate limited for "+request.upstreamId+" by Google; quota resets around "+at+" (Beijing time)"),{statusCode:429,retryAfter:Math.ceil((soonest-now)/1000)});
+    throw Object.assign(Error("All Pro/Ultra accounts are rate limited for "+request.upstreamId+" by Google; quota resets around "+at+" (Beijing time)"),{statusCode:429,retryAfter:Math.ceil((soonest-now)/1000)});
    }
   }
   if(request.antiTruncation && !policy.antiTruncation)
    throw Object.assign(Error("Anti-truncation unsupported for this model"),{statusCode:422});
-  const eligible=(slot,account)=>(policy.quotaFamily!=="ultra"||this.isUltra(account))&&this.eligible(slot,account,request.upstreamId);
+  const eligible=(slot,account)=>(policy.quotaFamily!=="ultra"||this.isPremium(account))&&this.eligible(slot,account,request.upstreamId);
   if(!allowUnavailable&&![...this.dispatch.pool.slots].some(([slot,owner])=>eligible(slot,owner.current)))
    throw Error("Model unavailable in a fresh synchronized account catalog");
   return {model:request.upstreamId,quotaFamily:policy.quotaFamily,eligible};
@@ -60,6 +60,8 @@ class CatalogRouting {
   if(plan){
    const policy=this.policies.get(plan.model);
    if(!policy||policy.quotaFamily!==plan.quotaFamily)return false;
+   // A premium request cannot run on a standard account: treat it as exhausted so rotation moves to a Pro/Ultra account.
+   if(plan.quotaFamily==='ultra'&&!this.isPremium(account))return true;
    return !this.dispatch.quotas.view(account,plan.model,policy.quotaFamily).allowed;
   }
   const snapshot=this.snapshot(slot,account);
@@ -88,7 +90,7 @@ class CatalogRouting {
    for(let i=0;i<pool.ids.length;i++){
     const target=pool.ids[(pool.cursor+i)%pool.ids.length];
     if(this.dispatch.accountFlags[target]||pool.owners.has(target)||excluded.has(target)||(pool.cooldowns.get(target)||0)>now||!this.dispatch.slotAllows(slot,target))continue;
-     if(plan.quotaFamily==='ultra'&&!this.isUltra(target))continue;
+     if(plan.quotaFamily==='ultra'&&!this.isPremium(target))continue;
     if(!this.dispatch.quotas.view(target,plan.model,plan.quotaFamily,now).allowed)continue;
     return {model:plan.model,quotaFamily:plan.quotaFamily,target,excludedAccounts:[...excluded]};
    }

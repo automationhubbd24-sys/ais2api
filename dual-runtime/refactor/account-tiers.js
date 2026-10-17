@@ -2,7 +2,7 @@
 // Account class lives in each auth file (accountTier), so it survives imports,
 // cookie refreshes and the Ultra switch. The switch only changes slot allocation.
 const fs=require('fs'),path=require('path'),crypto=require('crypto');
-const TIERS=['standard','ultra'];
+const TIERS=['standard','pro','ultra'];
 function cleanAlias(name){
  if(name!==undefined&&name!==null&&typeof name!=='string')throw Object.assign(Error('名称格式无效'),{statusCode:400});
  const s=String(name||'').replace(/[\u0000-\u001f\u007f]/g,'').trim();
@@ -26,8 +26,10 @@ class AccountTiers{
   this.cache.set(id,{tag,tier});return tier;
  }
  isUltra(id){return this.tier(id)==='ultra';}
+ // Pro and Ultra can both use premium models (e.g. gemini-4-argon) and share the dedicated slot.
+ isPremium(id){const t=this.tier(id);return t==='pro'||t==='ultra';}
  setTier(id,tier){
-  if(!TIERS.includes(tier))throw Object.assign(Error('分类只能是 standard 或 ultra'),{statusCode:400});
+  if(!TIERS.includes(tier))throw Object.assign(Error('分类只能是 standard、pro 或 ultra'),{statusCode:400});
   this.update(id,data=>{if(tier==='standard')delete data.accountTier;else data.accountTier=tier;});
   return {id,tier};
  }
@@ -57,7 +59,7 @@ class AccountTiers{
  // Which slot an account may be assigned to. Off/single mode: any slot.
  allowed(slot,id){
   if(!this.active())return true;
-  return (slot===this.mode.slot)===this.isUltra(id);
+  return (slot===this.mode.slot)===this.isPremium(id);
  }
  mismatch(slot,id){return id!==undefined&&!this.allowed(slot,id);}
  setMode(body){
@@ -68,8 +70,8 @@ class AccountTiers{
   return this.status();
  }
  status(ids=[]){
-  const ultra=ids.filter(id=>this.isUltra(id));
-  return {...this.mode,active:this.active(),single:this.isSingle(),ultraAccounts:ultra};
+  const ultra=ids.filter(id=>this.isUltra(id)),pro=ids.filter(id=>this.tier(id)==='pro');
+  return {...this.mode,active:this.active(),single:this.isSingle(),ultraAccounts:ultra,proAccounts:pro,premiumAccounts:ids.filter(id=>this.isPremium(id))};
  }
 }
 module.exports={AccountTiers,TIERS,cleanAlias};

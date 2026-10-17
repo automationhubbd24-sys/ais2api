@@ -391,17 +391,17 @@ class BrowserManager {
       {
         const GCB_INSTALL = `(function(){var M=window.default_MakerSuite;if(!M||!M.Cn||!M.GB)return 'nom';
 if(!M.Cn.__gcb){var o=M.Cn;var f=function(a,b){if(a&&a.mb)window.__tb=a;return o.apply(this,arguments)};f.__gcb=1;M.Cn=f;}
-if(!window.__gcCall||window.__gcCall.v!==2){window.__gcCall=async function(body,ht,key){var M=window.default_MakerSuite,tb=window.__tb;if(!tb)return JSON.stringify({s:503,t:'[14,"token service not ready"]'});
+if(!window.__gcCall||window.__gcCall.v!==3){window.__gcCall=async function(body,ht,key,hx){hx=hx||{};var M=window.default_MakerSuite,tb=window.__tb;if(!tb)return JSON.stringify({s:503,t:'[14,"token service not ready"]'});
 var md=tb.getMetadata()||{};var waa=md['X-Goog-Api-Key'];if(!key){var mb=tb.mb||{};for(var k in mb){var v=mb[k];if(typeof v==='string'&&/^AIza[0-9A-Za-z_-]{30,}$/.test(v)&&v!==waa){key=v;break;}}}
 if(!key)return JSON.stringify({s:503,t:'[14,"page api key not found"]'});
 var base='https://alkalimakersuite-pa.clients6.google.com';var au=md['X-Goog-AuthUser']!=null?String(md['X-Goog-AuthUser']):'0';
 body[4]=await M.Cn(tb,await M.GB(ht));
-var r=await fetch(base+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent',{method:'POST',credentials:'include',headers:{'content-type':'application/json+protobuf','x-user-agent':'grpc-web-javascript/0.1','x-goog-api-key':key,'authorization':md.Authorization,'x-goog-authuser':au},body:JSON.stringify(body)});
-return JSON.stringify({s:r.status,t:await r.text()});};window.__gcCall.v=2;}
+var hd={'content-type':'application/json+protobuf','x-user-agent':'grpc-web-javascript/0.1','x-goog-api-key':key,'authorization':md.Authorization,'x-goog-authuser':au};var tier=hx.tier||null;if(!tier){if(window.__gcTier===undefined){try{var tr=await fetch(base+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GetAiStudioBenefitTier',{method:'POST',credentials:'include',headers:hd,body:'[]'});var tj=tr.ok?JSON.parse(await tr.text()):null;var tv=Array.isArray(tj)?tj[0]:null;window.__gcTier=tv===1?'TIER1':tv===2?'TIER2':null;}catch(e){window.__gcTier=null;}}tier=window.__gcTier;}if(tier)hd['x-aistudio-g1-tier']=tier;if(hx.ext)hd['x-goog-ext-519733851-bin']=hx.ext;var r=await fetch(base+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent',{method:'POST',credentials:'include',headers:hd,body:JSON.stringify(body)});
+return JSON.stringify({s:r.status,t:await r.text(),tier:tier||''});};window.__gcCall.v=3;}
 return window.__tb?'ok':'wait';})()`;
         const pg = this.page, log = this.logger;
-        global.__gcbPage = pg; let gcbKey = null; const gcbWaa = 'AIzaSyBGb5fGAyC-pRcRU6MUHb__b_vKha71HRE';
-        this.context.on('request', r => { try { if (!/alkalimakersuite-pa\.clients6\.google\.com\/\$rpc\/.*MakerSuiteService\//.test(r.url())) return; const k = r.headers()['x-goog-api-key']; if (k && k !== gcbWaa && /^AIza/.test(k)) gcbKey = k; } catch {} });
+        global.__gcbPage = pg; let gcbKey = null; const gcbHx = {}; const gcbWaa = 'AIzaSyBGb5fGAyC-pRcRU6MUHb__b_vKha71HRE';
+        this.context.on('request', r => { try { if (!/alkalimakersuite-pa\.clients6\.google\.com\/\$rpc\/.*MakerSuiteService\//.test(r.url())) return; const k = r.headers()['x-goog-api-key']; if (k && k !== gcbWaa && /^AIza/.test(k)) gcbKey = k; const h = r.headers(); if (h['x-aistudio-g1-tier']) gcbHx.tier = h['x-aistudio-g1-tier']; if (h['x-goog-ext-519733851-bin']) gcbHx.ext = h['x-goog-ext-519733851-bin']; } catch {} });
         const gcbInstall = () => pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_INSTALL).catch(() => 'err');
         const gcbTimer = setInterval(() => { if (pg.isClosed()) return clearInterval(gcbTimer); gcbInstall(); }, 3000);
         const CAT = { HARM_CATEGORY_HARASSMENT: 7, HARM_CATEGORY_HATE_SPEECH: 8, HARM_CATEGORY_SEXUALLY_EXPLICIT: 9, HARM_CATEGORY_DANGEROUS_CONTENT: 10, HARM_CATEGORY_CIVIC_INTEGRITY: 11 };
@@ -506,16 +506,16 @@ return window.__tb?'ok':'wait';})()`;
             const g = JSON.parse(a[1] || '{}');
             const { body, ht } = buildBody(mm[1], g);
             await gcbInstall();
-            const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ',' + JSON.stringify(gcbKey) + ')';
+            const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ',' + JSON.stringify(gcbKey) + ',' + JSON.stringify(gcbHx) + ')';
             const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise((_, rj) => setTimeout(() => rj(new Error('GenerateContent timeout')), 600000))]);
             const r = JSON.parse(raw);
-            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
+            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
             const arr0 = JSON.parse(r.t); const isChunk = x => Array.isArray(x) && Array.isArray(x[0]) && Array.isArray(x[0][0]) && Array.isArray(x[0][0][0]) && x[0][0][0][1] === 'model'; const arr = Array.isArray(arr0) && arr0.some(isChunk) ? arr0 : (Array.isArray(arr0) && Array.isArray(arr0[0]) ? arr0[0] : []);
             const chunks = arr.map(convChunk).filter(c => c && c.candidates && c.candidates.length);
             let out;
             if (streamed) { const tail = arr.length && !isChunk(arr[arr.length - 1]) ? arr[arr.length - 1] : null; out = '[[' + chunks.map(c => JSON.stringify([JSON.stringify(c)])).concat(tail ? [JSON.stringify(tail)] : []).join(',') + ']]'; }
             else out = JSON.stringify([JSON.stringify(merge(chunks))]);
-            log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length);
+            log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length + ' tier=' + (r.tier || '-'));
             return route.fulfill({ status: 200, contentType: 'application/json+protobuf; charset=UTF-8', body: out });
           } catch (e) {
             log.warn('[GCBridge] error ' + e.message);
