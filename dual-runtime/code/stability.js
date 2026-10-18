@@ -67,8 +67,8 @@ function install(h){
    res.on("close",close);
    const timer=setTimeout(()=>{
     abort();
-    if(!res.destroyed){h._sendErrorResponse(res,504,"请求超过45分钟，已发送取消");if(!res.writableEnded)res.end();}
-   },2700000);
+    if(!res.destroyed){h._sendErrorResponse(res,504,"请求超过10分钟，已发送取消");if(!res.writableEnded)res.end();}
+   },600000);
    try{return await modelScope.run(model,()=>old(req,res));}
    finally{clearTimeout(timer);res.removeListener("close",close);}
   },()=>!res.destroyed).catch(e=>{

@@ -545,7 +545,7 @@ return window.__tb?'ok':'wait';})()`;
             await gcbInstall();
             const gcbT0 = Date.now();
             const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ',' + JSON.stringify(gcbKey) + ',' + JSON.stringify(gcbHx) + ')';
-            const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise((_, rj) => setTimeout(() => rj(new Error('GenerateContent timeout')), 900000))]);
+            const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise((_, rj) => setTimeout(() => rj(new Error('GenerateContent timeout')), 600000))]);
             const r = JSON.parse(raw);
             if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
             const arr0 = JSON.parse(r.t); const isChunk = x => Array.isArray(x) && Array.isArray(x[0]) && Array.isArray(x[0][0]) && Array.isArray(x[0][0][0]) && x[0][0][0][1] === 'model'; const arr = Array.isArray(arr0) && arr0.some(isChunk) ? arr0 : (Array.isArray(arr0) && Array.isArray(arr0[0]) ? arr0[0] : []);
@@ -1075,7 +1075,7 @@ class LoggingService {
 }
 
 class MessageQueue extends EventEmitter {
-  constructor(timeoutMs = 900000) {
+  constructor(timeoutMs = 600000) {
     super();
     this.messages = [];
     this.waitingResolvers = [];
@@ -1658,21 +1658,7 @@ class RequestHandler {
     };
 
     const messageQueue = this.connectionRegistry.createMessageQueue(requestId);
-    // Long upstream waits (argon / anti-truncation can take 8+ minutes): send SSE headers early and keep-alive
-    // comments so downstream gateways (nginx, new-api) see bytes and do not cut the connection.
-    let hbStart = null, hbTimer = null;
-    const stopHb = () => { clearTimeout(hbStart); clearInterval(hbTimer); };
-    if (isOpenAIStream) {
-      hbStart = setTimeout(() => {
-        if (res.headersSent || res.writableEnded || res.destroyed) return;
-        res.status(200).set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", "X-Accel-Buffering": "no" });
-        res.flushHeaders();
-        res.write(": keep-alive\n\n");
-        this.logger.info("[Request] 上游 20 秒未响应，已提前返回流式响应头，每 10 秒发送心跳: " + requestId);
-        hbTimer = setInterval(() => { if (res.writableEnded || res.destroyed) return stopHb(); res.write(": keep-alive\n\n"); }, 10000);
-      }, 20000);
-      res.once("close", stopHb); res.once("finish", stopHb);
-    }
+
     try {
       this._forwardRequest(proxyRequest);
       const initialMessage = await messageQueue.dequeue();
@@ -1688,8 +1674,6 @@ class RequestHandler {
           this._sendErrorResponse(res, initialMessage.status || 502, initialMessage.message);
         } else if (isOpenAIStream) {
           if (!res.writableEnded) {
-            const st = Number(initialMessage.status) || 502;
-            res.write("data: " + JSON.stringify({ error: { code: st, message: String(initialMessage.message || "upstream error").slice(0, 500), status: ({400: "INVALID_ARGUMENT", 401: "UNAUTHENTICATED", 403: "PERMISSION_DENIED", 404: "NOT_FOUND", 429: "RESOURCE_EXHAUSTED", 500: "INTERNAL", 502: "BAD_GATEWAY", 503: "UNAVAILABLE", 504: "DEADLINE_EXCEEDED"})[st] || "UPSTREAM_ERROR" } }) + "\n\n");
             res.write("data: [DONE]\n\n");
             res.end();
           }
@@ -1711,7 +1695,7 @@ class RequestHandler {
       }
 
       if (isOpenAIStream) {
-        if (!res.headersSent) res.status(200).set({
+        res.status(200).set({
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
           Connection: "keep-alive",
@@ -2364,7 +2348,7 @@ class RequestHandler {
           is_generative: true,
           streaming_mode: "fake",
         });
-        const headerMsg = await contQueue.dequeue(900000);
+        const headerMsg = await contQueue.dequeue(300000);
         if (headerMsg.event_type === "error") {
           this.logger.warn("[AT] continuation error: " + (headerMsg.message || "").slice(0, 200));
           return null;
@@ -2428,7 +2412,8 @@ class RequestHandler {
   _handleRequestError(error, res) {
     if (res.headersSent) {
       this.logger.error(`[Request] 请求处理错误 (头已发送): ${error.message}`);
-      this._sendErrorChunkToClient(res, `处理失败: ${error.message}`);
+      if (this.serverSystem.streamingMode === "fake")
+        this._sendErrorChunkToClient(res, `处理失败: ${error.message}`);
       if (!res.writableEnded) res.end();
     } else {
       this.logger.error(`[Request] 请求处理错误: ${error.message}`);

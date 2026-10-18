@@ -19,7 +19,7 @@ test('stale pending rows are closed as uncertain, fresh ones untouched',async()=
  const h=new RequestHistory(dir,{clock:()=>now});await h.init();
  const {randomUUID}=require('crypto');const a=randomUUID(),b=randomUUID();
  await h.begin({id:a,model:'gemini-4-argon',account:31,slot:'B'});
- now+=61*60000;await h.begin({id:b,model:'gemini-4-argon',account:31,slot:'B'});
+ now+=16*60000;await h.begin({id:b,model:'gemini-4-argon',account:31,slot:'B'});
  assert.equal(await h.expireStale(),1);
  const rows=h.list({}).items,ra=rows.find(r=>r.id===a),rb=rows.find(r=>r.id===b);
  assert.equal(ra.outcome,'uncertain');assert.equal(ra.metrics.errorKind,'stale_pending');assert.equal(rb.outcome,'pending');
