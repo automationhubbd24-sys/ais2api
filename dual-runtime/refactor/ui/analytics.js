@@ -42,16 +42,25 @@
   const box=byId('usage-counts');if(!box)return;
   try{const d=await read('/api/usage-counts',control);box.replaceChildren();
    if(!d.items.length){box.append(node('p','近 30 天没有请求记录','muted'));return;}
+   const groups=new Map();for(const i of d.items){const k=String(i.account??'—');if(!groups.has(k))groups.set(k,[]);groups.get(k).push(i);}
+   const sum=l=>l.reduce((n,i)=>n+(i.month?.requests||0),0);
+   const ordered=[...groups.entries()].sort((x,y)=>sum(y[1])-sum(x[1]));
    const table=node('table',undefined,'count-table'),head=node('tr');
-   for(const h of ['账号','模型','今天','近 7 天','近 30 天','429（今/7/30 天）','最近 429'])head.append(node('th',h));
+   for(const h of ['账号','模型','今天','7 天','30 天','成功率','429'])head.append(node('th',h));
    const thead=node('thead');thead.append(head);table.append(thead);const body=node('tbody');
-   for(const i of d.items){const tr=node('tr');
-    const who=node('td');who.append(node('span','#'+(i.account??'—')));if(i.tier==='ultra'||i.tier==='ultra20')who.append(node('span',(i.tier==='ultra20'?'Ultra 20x':'Ultra 5x'),'badge ultra-badge'));else if(i.tier==='pro')who.append(node('span','Pro','badge pro-badge'));tr.append(who);
-    tr.append(node('td',i.model));
-    for(const k of ['today','week','month']){const c=i[k],td=node('td');td.append(node('strong',fmt(c.requests)));td.append(node('small',' 成功 '+fmt(c.success),'muted'));tr.append(td);}
-    tr.append(node('td',fmt(i.today.rateLimited)+' / '+fmt(i.week.rateLimited)+' / '+fmt(i.month.rateLimited)));
-    tr.append(node('td',i.last429At?time(i.last429At):'—'));body.append(tr);}
+   const num=v=>{const td=node('td',v?fmt(v):'·','num');if(!v)td.classList.add('zero');return td;};
+   const LIMIT=8;let shown=0,hidden=0;
+   for(const [acc,list] of ordered){list.sort((x,y)=>(y.month?.requests||0)-(x.month?.requests||0));
+    list.forEach((i,n)=>{const tr=node('tr');if(n===0)tr.className='grp';
+     const who=node('td',undefined,'who');if(n===0){who.append(node('span','#'+acc));if(i.tier==='ultra'||i.tier==='ultra20')who.append(node('span',i.tier==='ultra20'?'U20':'U5','badge ultra-badge'));else if(i.tier==='pro')who.append(node('span','Pro','badge pro-badge'));}
+     tr.append(who,node('td',i.model,'mdl'));
+     tr.append(num(i.today.requests),num(i.week.requests),num(i.month.requests));
+     const m=i.month||{},rate=m.requests?Math.round(m.success/m.requests*100):null,rt=node('td',rate==null?'·':rate+'%','num');if(rate!=null&&rate<80)rt.classList.add('low');if(rate==null)rt.classList.add('zero');tr.append(rt);
+     const r=m.rateLimited||0,rl=node('td',r?fmt(r):'·','num');if(r){rl.classList.add('warn429');rl.title='今天 '+fmt(i.today.rateLimited)+' · 7 天 '+fmt(i.week.rateLimited)+' · 30 天 '+fmt(r)+(i.last429At?' · 最近 '+time(i.last429At):'');}else rl.classList.add('zero');tr.append(rl);
+     if(shown>=LIMIT){tr.hidden=true;tr.classList.add('extra');hidden++;}else shown++;
+     body.append(tr);});}
    table.append(body);const wrap=node('div',undefined,'count-table-wrap');wrap.append(table);box.append(wrap);
+   if(hidden){const more=node('button','显示全部（还有 '+hidden+' 行）','count-more');more.type='button';more.onclick=()=>{const open=more.dataset.open!=='1';body.querySelectorAll('tr.extra').forEach(t=>t.hidden=!open);more.dataset.open=open?'1':'';more.textContent=open?'收起':'显示全部（还有 '+hidden+' 行）';};box.append(more);}
   }catch(e){if(e.name!=='AbortError'){box.replaceChildren(node('p','请求次数读取失败：'+e.message,'warn'));}}
  }
  function recordingWarning(d){const h=d.recording?.history||d.health;return h?.degraded||h?.ready===false||(d.recording?.beginFailures||0)+(d.recording?.finishFailures||0)?' · 统计可能不完整':d.recording?.usageMissing>0?' · 自上次重启有 '+d.recording.usageMissing+' 次成功请求未拿到用量（累计 '+(d.recording.usageMissingTotal||d.recording.usageMissing)+' 次，最近：'+(d.recording.lastUsageMissing?.model||'未知')+'）':d.recording?.usageMissingTotal>0&&d.recording.lastUsageMissing?.at>Date.now()-86400000?' · 24 小时内有成功请求未拿到用量（累计 '+d.recording.usageMissingTotal+' 次，最近：'+(d.recording.lastUsageMissing?.model||'未知')+'）':'';}

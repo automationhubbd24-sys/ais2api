@@ -219,3 +219,18 @@ body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=sett
 .account-toolbar,.history-filters{padding:0!important;border:0!important;background:transparent!important}
 .account-toolbar input,.account-toolbar select,.history-filters input,.history-filters select{background:var(--panel)}
 .worker,.mdl-card,.catalog-worker{border-color:color-mix(in srgb,var(--border) 70%,transparent)}
+
+/* Usage count table: one number per cell, grouped by account. */
+.count-table{font-size:13px;font-variant-numeric:tabular-nums}
+.count-table th{padding:8px 10px;font-size:11px;font-weight:500;color:var(--muted);border-bottom:1px solid var(--border)}
+.count-table td{padding:7px 10px;border:0}
+.count-table th:nth-child(n+3),.count-table td.num{text-align:right}
+.count-table tr.grp td{border-top:1px solid var(--border)}
+.count-table tbody tr:first-child td{border-top:0}
+.count-table td.who{font-weight:600;white-space:nowrap}.count-table td.who .badge{margin-left:6px;font-size:10px;padding:1px 6px}
+.count-table td.mdl{color:var(--muted)}
+.count-table td.zero{color:color-mix(in srgb,var(--muted) 45%,transparent)}
+.count-table td.low{color:var(--warning);font-weight:600}
+.count-table td.warn429{color:var(--danger);font-weight:600;cursor:help}
+.count-more{display:block;margin:10px auto 0;font-size:12px}
+@media (max-width:639px){.count-table th,.count-table td{padding:6px 6px}.count-table td.mdl{max-width:120px;overflow:hidden;text-overflow:ellipsis}}
