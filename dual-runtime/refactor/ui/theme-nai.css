@@ -1,11 +1,11 @@
 /* "Starlight" theme layer. Artwork generated with NovelAI V5 (nai-diffusion-5-full).
    Loaded after every other stylesheet; only colours, surfaces and decoration change. */
-:root{--bg:hsl(228 40% 97%);--fg:hsl(232 38% 14%);--panel:hsl(0 0% 100% / .86);--muted:hsl(229 14% 44%);--border:hsl(228 36% 89%);--primary:hsl(243 72% 58%);--accent:hsl(196 88% 48%);--success:hsl(158 58% 36%);--warning:hsl(34 86% 44%);--danger:hsl(350 70% 52%);--soft:hsl(243 90% 97%);--inset:hsl(230 44% 96%);--sidebar-bg:hsl(0 0% 100% / .72);--grad:linear-gradient(135deg,hsl(243 72% 60%),hsl(270 68% 62%) 55%,hsl(196 88% 52%));--shadow:0 1px 2px hsl(240 40% 30% / .05),0 8px 24px -12px hsl(243 60% 40% / .18);--glow:0 10px 30px -12px hsl(243 80% 55% / .45)}
-:root.dark{--bg:hsl(236 34% 9%);--fg:hsl(228 30% 90%);--panel:hsl(236 30% 14% / .82);--muted:hsl(230 14% 64%);--border:hsl(236 22% 24%);--primary:hsl(246 92% 74%);--accent:hsl(192 90% 62%);--success:hsl(156 52% 52%);--warning:hsl(38 86% 60%);--danger:hsl(352 82% 68%);--soft:hsl(246 50% 22% / .7);--inset:hsl(236 26% 18%);--sidebar-bg:hsl(236 34% 11% / .78);--grad:linear-gradient(135deg,hsl(246 86% 68%),hsl(276 74% 70%) 55%,hsl(192 90% 60%));--shadow:0 1px 2px rgb(0 0 0 / .3),0 12px 30px -16px rgb(0 0 0 / .6);--glow:0 10px 30px -10px hsl(246 90% 65% / .5)}
+:root{--bg:hsl(214 40% 97%);--fg:hsl(218 38% 14%);--panel:hsl(0 0% 100% / .86);--muted:hsl(215 14% 44%);--border:hsl(214 36% 89%);--primary:hsl(211 74% 47%);--accent:hsl(196 88% 48%);--success:hsl(158 58% 36%);--warning:hsl(34 86% 44%);--danger:hsl(350 70% 52%);--soft:hsl(211 90% 97%);--inset:hsl(214 44% 96%);--sidebar-bg:hsl(0 0% 100% / .72);--grad:linear-gradient(135deg,hsl(211 72% 60%),hsl(192 68% 62%) 55%,hsl(196 88% 52%));--shadow:0 1px 2px hsl(214 40% 30% / .05),0 8px 24px -12px hsl(211 60% 40% / .18);--glow:0 10px 30px -12px hsl(211 80% 55% / .45)}
+:root.dark{--bg:hsl(216 34% 9%);--fg:hsl(214 30% 90%);--panel:hsl(216 30% 14% / .82);--muted:hsl(214 14% 64%);--border:hsl(216 22% 24%);--primary:hsl(208 92% 74%);--accent:hsl(192 90% 62%);--success:hsl(156 52% 52%);--warning:hsl(38 86% 60%);--danger:hsl(352 82% 68%);--soft:hsl(208 50% 22% / .7);--inset:hsl(216 26% 18%);--sidebar-bg:hsl(216 34% 11% / .78);--grad:linear-gradient(135deg,hsl(208 86% 68%),hsl(188 74% 70%) 55%,hsl(192 90% 60%));--shadow:0 1px 2px rgb(0 0 0 / .3),0 12px 30px -16px rgb(0 0 0 / .6);--glow:0 10px 30px -10px hsl(208 90% 65% / .5)}
 body{background:var(--bg)}
-body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(900px 520px at 100% -10%,hsl(270 90% 80% / .30),transparent 60%),radial-gradient(760px 480px at -10% 110%,hsl(196 90% 70% / .22),transparent 60%),radial-gradient(600px 400px at 40% 30%,hsl(243 90% 85% / .14),transparent 70%)}
-:root.dark body::before{background:radial-gradient(900px 520px at 100% -10%,hsl(270 80% 40% / .30),transparent 60%),radial-gradient(760px 480px at -10% 110%,hsl(196 90% 35% / .22),transparent 60%),radial-gradient(600px 400px at 40% 30%,hsl(243 80% 40% / .14),transparent 70%)}
-::selection{background:hsl(243 90% 70% / .3)}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(900px 520px at 100% -10%,hsl(192 90% 80% / .30),transparent 60%),radial-gradient(760px 480px at -10% 110%,hsl(196 90% 70% / .22),transparent 60%),radial-gradient(600px 400px at 40% 30%,hsl(211 90% 85% / .14),transparent 70%)}
+:root.dark body::before{background:radial-gradient(900px 520px at 100% -10%,hsl(192 80% 40% / .30),transparent 60%),radial-gradient(760px 480px at -10% 110%,hsl(196 90% 35% / .22),transparent 60%),radial-gradient(600px 400px at 40% 30%,hsl(211 80% 40% / .14),transparent 70%)}
+::selection{background:hsl(211 90% 70% / .3)}
 .card,dialog{backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2)}
 .card{border-radius:18px;transition:box-shadow .2s,border-color .2s}
 .stat:hover,.worker:hover{box-shadow:var(--shadow),var(--glow);border-color:color-mix(in srgb,var(--primary) 30%,var(--border))}
@@ -25,9 +25,9 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .section-tabs .selected{color:var(--primary)}
 .stat{overflow:hidden}
 .stat::after{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--grad);opacity:.85}
-.nai-hero{position:relative;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;min-height:168px;margin:0 0 20px;padding:22px 24px;overflow:hidden;border-radius:22px;color:#fff;background:linear-gradient(90deg,hsl(240 60% 12% / .78),hsl(250 60% 20% / .25) 60%,transparent),url(/console-assets/nai-banner.webp) center 40%/cover no-repeat;box-shadow:var(--shadow),var(--glow)}
+.nai-hero{position:relative;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;min-height:168px;margin:0 0 20px;padding:22px 24px;overflow:hidden;border-radius:22px;color:#fff;background:linear-gradient(90deg,hsl(214 60% 12% / .78),hsl(212 60% 20% / .25) 60%,transparent),url(/console-assets/nai-banner.webp) center 40%/cover no-repeat;box-shadow:var(--shadow),var(--glow)}
 .nai-hero h2{margin:0;font-size:24px;letter-spacing:-.3px;text-shadow:0 2px 12px rgb(0 0 0 / .35)}
-.nai-hero p{margin:6px 0 0;max-width:520px;color:hsl(230 60% 92%);font-size:13px}
+.nai-hero p{margin:6px 0 0;max-width:520px;color:hsl(214 60% 92%);font-size:13px}
 .nai-chip{display:inline-flex;align-items:center;gap:6px;margin-top:12px;padding:4px 10px;border-radius:999px;border:1px solid rgb(255 255 255 / .28);background:rgb(255 255 255 / .14);font-size:12px}
 .nai-chip i{width:7px;height:7px;border-radius:50%;background:hsl(156 80% 60%);box-shadow:0 0 8px hsl(156 80% 60%)}
 .nai-chip.bad i{background:hsl(352 90% 66%);box-shadow:0 0 8px hsl(352 90% 66%)}
@@ -40,9 +40,9 @@ td.empty::before{width:84px;height:84px}
 @media (prefers-reduced-motion:reduce){.card,.sidebar-nav a,.primary{transition:none!important}.sidebar-nav a:hover{transform:none!important}}
 /* ---------- Accounts page ---------- */
 .nai-acc-hero{position:relative;display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:120px;margin:0 0 16px;padding:20px 24px;overflow:hidden;border-radius:22px;color:#fff;
- background:linear-gradient(90deg,hsl(240 60% 12% / .82),hsl(250 60% 20% / .35) 55%,transparent),url(/console-assets/nai-acc-banner.webp) center/cover no-repeat;box-shadow:var(--shadow),var(--glow)}
+ background:linear-gradient(90deg,hsl(214 60% 12% / .82),hsl(212 60% 20% / .35) 55%,transparent),url(/console-assets/nai-acc-banner.webp) center/cover no-repeat;box-shadow:var(--shadow),var(--glow)}
 .nai-acc-hero h2{margin:0;font-size:22px;text-shadow:0 2px 12px rgb(0 0 0 / .35)}
-.nai-acc-hero p{margin:4px 0 0;color:hsl(230 60% 92%);font-size:13px}
+.nai-acc-hero p{margin:4px 0 0;color:hsl(214 60% 92%);font-size:13px}
 .nai-acc-hero .nai-acc-stats{display:flex;gap:10px;flex-wrap:wrap}
 .nai-acc-hero .nai-acc-stats span{padding:6px 12px;border-radius:12px;border:1px solid rgb(255 255 255 / .25);background:rgb(255 255 255 / .14);font-size:12px;white-space:nowrap}
 .nai-acc-hero .nai-acc-stats b{font-size:16px;margin-right:4px}
@@ -54,13 +54,13 @@ td.empty::before{width:84px;height:84px}
 .account-summary .account-summary-card > div{position:relative;z-index:1}
 .account-summary .account-summary-card .badge{position:relative;z-index:1}
 .account-summary strong{font-size:30px;font-weight:700}
-.summary-all{--art:url(/console-assets/nai-sum-all.webp);background:linear-gradient(135deg,hsl(243 90% 97% / .95),hsl(270 90% 96% / .85))!important}
+.summary-all{--art:url(/console-assets/nai-sum-all.webp);background:linear-gradient(135deg,hsl(211 90% 97% / .95),hsl(192 90% 96% / .85))!important}
 .summary-available{--art:url(/console-assets/nai-sum-available.webp);background:linear-gradient(135deg,hsl(158 70% 96% / .95),hsl(190 80% 96% / .85))!important}
-.summary-assigned{--art:url(/console-assets/nai-sum-assigned.webp);background:linear-gradient(135deg,hsl(220 90% 97% / .95),hsl(243 90% 96% / .85))!important}
+.summary-assigned{--art:url(/console-assets/nai-sum-assigned.webp);background:linear-gradient(135deg,hsl(220 90% 97% / .95),hsl(211 90% 96% / .85))!important}
 .summary-cooling{--art:url(/console-assets/nai-sum-cooling.webp);background:linear-gradient(135deg,hsl(36 90% 96% / .95),hsl(200 80% 96% / .85))!important}
-:root.dark .summary-all{background:linear-gradient(135deg,hsl(246 40% 20% / .9),hsl(270 40% 18% / .8))!important}
+:root.dark .summary-all{background:linear-gradient(135deg,hsl(208 40% 20% / .9),hsl(192 40% 18% / .8))!important}
 :root.dark .summary-available{background:linear-gradient(135deg,hsl(160 35% 16% / .9),hsl(190 40% 16% / .8))!important}
-:root.dark .summary-assigned{background:linear-gradient(135deg,hsl(225 40% 18% / .9),hsl(246 40% 18% / .8))!important}
+:root.dark .summary-assigned{background:linear-gradient(135deg,hsl(225 40% 18% / .9),hsl(208 40% 18% / .8))!important}
 :root.dark .summary-cooling{background:linear-gradient(135deg,hsl(36 35% 16% / .9),hsl(205 40% 16% / .8))!important}
 .account-summary .account-summary-card.selected{border-color:var(--primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary) 35%,transparent),var(--glow)}
 /* Toolbar. */
@@ -71,7 +71,7 @@ td.empty::before{width:84px;height:84px}
 .account-table thead th{background:color-mix(in srgb,var(--primary) 6%,var(--panel));color:var(--muted);font-size:11px;letter-spacing:.3px}
 .account-table tbody tr{transition:background .15s}
 .account-table tbody tr:hover{background:color-mix(in srgb,var(--primary) 5%,transparent)}
-.avatar{width:40px;height:40px;border:2px solid transparent;color:transparent;font-size:0;background:var(--avimg,var(--inset)) center/cover no-repeat padding-box,var(--grad) border-box;box-shadow:0 4px 12px -4px hsl(243 70% 50% / .45)}
+.avatar{width:40px;height:40px;border:2px solid transparent;color:transparent;font-size:0;background:var(--avimg,var(--inset)) center/cover no-repeat padding-box,var(--grad) border-box;box-shadow:0 4px 12px -4px hsl(211 70% 50% / .45)}
 .account-name strong{font-size:13px;font-weight:600}
 .account-name small{font-size:11px}
 .avatar[data-av="01"]{--avimg:url(/console-assets/nai-av01.webp)}.avatar[data-av="02"]{--avimg:url(/console-assets/nai-av02.webp)}
@@ -98,8 +98,8 @@ td.empty::before{width:84px;height:84px}
 /* Add-account cards with illustrations. */
 .add-grid .form-card.legacy{position:relative;overflow:hidden;border-radius:20px}
 .add-grid .form-card.legacy.nai-art > h2{position:relative;min-height:104px;margin:-18px -18px 14px;padding:22px 160px 18px 20px;border-bottom:1px solid var(--border);
- background:linear-gradient(90deg,var(--panel) 45%,transparent 80%),var(--art) right center/auto 100% no-repeat,linear-gradient(135deg,hsl(243 90% 97%),hsl(200 90% 96%))}
-:root.dark .add-grid .form-card.legacy.nai-art > h2{background:linear-gradient(90deg,var(--panel) 45%,transparent 80%),var(--art) right center/auto 100% no-repeat,linear-gradient(135deg,hsl(246 40% 20%),hsl(210 40% 18%))}
+ background:linear-gradient(90deg,var(--panel) 45%,transparent 80%),var(--art) right center/auto 100% no-repeat,linear-gradient(135deg,hsl(211 90% 97%),hsl(200 90% 96%))}
+:root.dark .add-grid .form-card.legacy.nai-art > h2{background:linear-gradient(90deg,var(--panel) 45%,transparent 80%),var(--art) right center/auto 100% no-repeat,linear-gradient(135deg,hsl(208 40% 20%),hsl(210 40% 18%))}
 .nai-art-cookie{--art:url(/console-assets/nai-add-cookie.webp)}
 .nai-art-script{--art:url(/console-assets/nai-add-script.webp)}
 .nai-art-login{--art:url(/console-assets/nai-add-login.webp)}
@@ -118,7 +118,7 @@ body[data-page=history]{--nai-pg:url(/console-assets/nai-pg-history.webp)}
 body[data-page=settings]{--nai-pg:url(/console-assets/nai-pg-settings.webp)}
 body[data-page=add]{--nai-pg:url(/console-assets/nai-pg-accounts.webp)}
 body[data-page] .page-header::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none}
-body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=settings],[data-page=add]) .page-header::before{background:linear-gradient(90deg,rgb(14 12 40 / .62),rgb(14 12 40 / .18) 55%,transparent)}
+body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=settings],[data-page=add]) .page-header::before{background:linear-gradient(90deg,rgb(10 22 40 / .62),rgb(10 22 40 / .18) 55%,transparent)}
 body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=settings],[data-page=add]) .page-header>*{position:relative;z-index:1}
 body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=settings],[data-page=add]) .page-header h1{color:#fff;font-size:26px;text-shadow:0 2px 14px rgb(0 0 0 / .4)}
 body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=settings],[data-page=add]) .page-header .tools button,body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=settings],[data-page=add]) .page-header #updated{color:#fff;border-color:rgb(255 255 255 / .3);background:rgb(255 255 255 / .16);backdrop-filter:blur(8px)}
@@ -191,3 +191,31 @@ body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=sett
 .key-actions .danger{color:var(--bad,#dc2626)}
 /* Cards with backdrop-filter form stacking contexts; keep toolbars with dropdowns above the next card. */
 .account-toolbar,.history-filters,.card:has(> details[open]),.card:has(details[open]){position:relative;z-index:5}
+
+/* calm: hide empty helper lines */
+.sub:empty,.muted:empty,#ulist:empty{display:none}
+
+/* ===== Less boxy: fewer frames, more rhythm ===== */
+.card,dialog{backdrop-filter:none;-webkit-backdrop-filter:none}
+.card{border-radius:14px;box-shadow:none;background:var(--panel)}
+.stat:hover,.worker:hover{box-shadow:none;border-color:var(--border)}
+:root,:root.dark{--glow:none}
+.primary,button.primary{background:var(--primary)!important;box-shadow:none}
+.sidebar-nav a.selected{color:var(--primary);background:var(--soft);box-shadow:none}
+:root.dark .sidebar-nav a.selected{color:#fff}
+/* Stat rows: one strip split by hairlines instead of N separate boxes. */
+.stats,#usage-cards{gap:1px;background:var(--border);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.stats>.stat,#usage-cards>.stat{border:0!important;border-radius:0!important;box-shadow:none!important;background:var(--panel)!important;min-height:0}
+.stats>.stat .stat-icon{display:none}
+.stats>.stat>span{max-width:none}
+.stats>.stat strong{font-size:26px;margin:6px 0 2px}
+/* Settings: one panel per group; items inside have no frames of their own. */
+.settings-group{padding:18px 22px 22px;border:1px solid var(--border);border-radius:16px;background:var(--panel)}
+.settings-group .group-icon{background:transparent;width:auto;height:auto}
+.settings-cards{gap:22px 36px}
+.settings-cards>.card{padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+@media (max-width:1279px){.settings-cards>.card+.card{padding-top:20px;border-top:1px dashed var(--border)}}
+/* Toolbars are not cards. */
+.account-toolbar,.history-filters{padding:0!important;border:0!important;background:transparent!important}
+.account-toolbar input,.account-toolbar select,.history-filters input,.history-filters select{background:var(--panel)}
+.worker,.mdl-card,.catalog-worker{border-color:color-mix(in srgb,var(--border) 70%,transparent)}

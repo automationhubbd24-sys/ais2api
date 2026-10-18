@@ -29,7 +29,7 @@
   if(list&&!list.querySelector('.nai-acc-hero')){
    const hero=document.createElement('div');hero.className='nai-acc-hero';
    const t=document.createElement('div'),h=document.createElement('h2'),p=document.createElement('p');
-   h.textContent='账号池';p.textContent='点击下方卡片按状态筛选，点击账号查看各模型额度';t.append(h,p);
+   h.textContent='账号池';t.append(h);
    const st=document.createElement('div');st.className='nai-acc-stats';
    const mk=l=>{const s=document.createElement('span'),b=document.createElement('b');b.textContent='—';s.append(b,document.createTextNode(l));st.append(s);return b;};
    const total=mk('个账号'),pro=mk('个 Pro'),ultra=mk('个 Ultra'),bad=mk('个失效');

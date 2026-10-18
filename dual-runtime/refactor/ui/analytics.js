@@ -43,7 +43,7 @@
   try{const d=await read('/api/usage-counts',control);box.replaceChildren();
    if(!d.items.length){box.append(node('p','近 30 天没有请求记录','muted'));return;}
    const table=node('table',undefined,'count-table'),head=node('tr');
-   for(const h of ['账号','模型','今天','近 7 天','近 30 天','429 次数','最近 429'])head.append(node('th',h));
+   for(const h of ['账号','模型','今天','近 7 天','近 30 天','429（今/7/30 天）','最近 429'])head.append(node('th',h));
    const thead=node('thead');thead.append(head);table.append(thead);const body=node('tbody');
    for(const i of d.items){const tr=node('tr');
     const who=node('td');who.append(node('span','#'+(i.account??'—')));if(i.tier==='ultra'||i.tier==='ultra20')who.append(node('span',(i.tier==='ultra20'?'Ultra 20x':'Ultra 5x'),'badge ultra-badge'));else if(i.tier==='pro')who.append(node('span','Pro','badge pro-badge'));tr.append(who);
@@ -52,7 +52,6 @@
     tr.append(node('td',fmt(i.today.rateLimited)+' / '+fmt(i.week.rateLimited)+' / '+fmt(i.month.rateLimited)));
     tr.append(node('td',i.last429At?time(i.last429At):'—'));body.append(tr);}
    table.append(body);const wrap=node('div',undefined,'count-table-wrap');wrap.append(table);box.append(wrap);
-   box.append(node('p','北京时间 · 429：今天 / 7 天 / 30 天','muted'));
   }catch(e){if(e.name!=='AbortError'){box.replaceChildren(node('p','请求次数读取失败：'+e.message,'warn'));}}
  }
  function recordingWarning(d){const h=d.recording?.history||d.health;return h?.degraded||h?.ready===false||(d.recording?.beginFailures||0)+(d.recording?.finishFailures||0)?' · 统计可能不完整':d.recording?.usageMissing>0?' · 自上次重启有 '+d.recording.usageMissing+' 次成功请求未拿到用量（累计 '+(d.recording.usageMissingTotal||d.recording.usageMissing)+' 次，最近：'+(d.recording.lastUsageMissing?.model||'未知')+'）':d.recording?.usageMissingTotal>0&&d.recording.lastUsageMissing?.at>Date.now()-86400000?' · 24 小时内有成功请求未拿到用量（累计 '+d.recording.usageMissingTotal+' 次，最近：'+(d.recording.lastUsageMissing?.model||'未知')+'）':'';}

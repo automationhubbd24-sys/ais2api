@@ -182,7 +182,7 @@ function mshow(m){mode=m;const busy=["parking","resuming","pending"].includes(m.
  const txt={dual:"双实例",parked:"单实例",parking:"切换中",pending:"切换中",resuming:"恢复中"}[m.phase]||m.phase;
  $("mtext").textContent=m.leaseActive?txt+" · 登录中":txt;
  $("mchip").className="chip "+(m.error?"bad":busy||m.leaseActive?"warn":"ok");
- $("msub").textContent=m.single?("实例 "+m.serving+" 运行，"+m.parked+" 停用；登录时暂停 "+m.serving):"两个实例运行；登录时暂停其中一个";
+ $("msub").textContent=m.single?("仅实例 "+m.serving):"";
  $("mres").textContent=m.error||"";
  clearTimeout(mtimer);mtimer=setTimeout(mload,busy||m.leaseActive?3000:15000);}
 async function mload(){try{const r=await fetch("/api/run-mode",{credentials:"same-origin",redirect:"error"});const d=await r.json();if(r.ok)mshow(d);else{$("mtext").textContent="未知";mtimer=setTimeout(mload,15000);}}catch{mtimer=setTimeout(mload,15000);}}
@@ -195,8 +195,8 @@ let utimer=null;
 function ushow(u){
  $("uon").checked=u.enabled;$("uslot").value=u.slot;$("uon").disabled=false;$("uslot").disabled=false;
  const ul=u.ultraAccounts||[],pl=u.proAccounts||[],n=ul.length+pl.length;
- $("usub").textContent=!u.enabled?"已关闭：账号不按分类分配，Pro/Ultra 账号也参与普通轮换":u.single?"已开启，但单实例模式下暂不生效":"实例 "+u.slot+" 只用 Pro/Ultra 账号，另一实例只用普通账号";
- $("ulist").textContent=n?[ul.length?"Ultra 账号："+ul.map(x=>"#"+x).join("、"):"",pl.length?"Pro 账号："+pl.map(x=>"#"+x).join("、"):""].filter(Boolean).join("；"):"还没有 Pro/Ultra 账号。登录或导入时选择分类，或在管理后台账号详情里修改。";
+ $("usub").textContent=!u.enabled?"":u.single?"单实例下不生效":"实例 "+u.slot;
+ $("ulist").textContent=n?[ul.length?"Ultra 账号："+ul.map(x=>"#"+x).join("、"):"",pl.length?"Pro 账号："+pl.map(x=>"#"+x).join("、"):""].filter(Boolean).join("；"):"";
 }
 async function uload(){clearTimeout(utimer);try{const r=await fetch("/api/ultra-mode",{credentials:"same-origin",redirect:"error"});const d=await r.json();if(r.ok)ushow(d);}catch{}utimer=setTimeout(uload,20000);}
 async function usave(){

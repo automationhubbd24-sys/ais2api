@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>AIS2API 管理后台</title><link rel="stylesheet" href="/console-assets/console.css?v=r2a"><link rel="stylesheet" href="/console-assets/console-panels.css?v=r2a"><link rel="stylesheet" href="/console-assets/models.css?v=r2a"><script src="/console-assets/console.js?v=n4" defer></script><script src="/console-assets/shell.js?v=n3" defer></script><script src="/console-assets/models.js?v=n5" defer></script><link rel="stylesheet" href="/console-assets/analytics.css?v=r2a"><script src="/console-assets/analytics.js?v=r2b" defer></script><script src="/console-assets/prices.js?v=n5" defer></script><script src="/console-assets/proxies.js?v=r2a" defer></script><link rel="stylesheet" href="/console-assets/admin.css?v=r2a"><script src="/console-assets/admin-tools.js?v=r2a" defer></script><script src="/console-assets/security.js?v=n4" defer></script><link rel="stylesheet" href="/console-assets/theme-nai.css?v=n5"><script src="/console-assets/theme-nai.js?v=n3" defer></script><link rel="icon" type="image/png" href="/public-assets/nai-favicon.png"><meta name="theme-color" content="#5b4ce0"></head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>AIS2API 管理后台</title><link rel="stylesheet" href="/console-assets/console.css?v=r2a"><link rel="stylesheet" href="/console-assets/console-panels.css?v=r2a"><link rel="stylesheet" href="/console-assets/models.css?v=r2a"><script src="/console-assets/console.js?v=n4" defer></script><script src="/console-assets/shell.js?v=n3" defer></script><script src="/console-assets/models.js?v=n5" defer></script><link rel="stylesheet" href="/console-assets/analytics.css?v=r2a"><script src="/console-assets/analytics.js?v=n6" defer></script><script src="/console-assets/prices.js?v=n5" defer></script><script src="/console-assets/proxies.js?v=r2a" defer></script><link rel="stylesheet" href="/console-assets/admin.css?v=r2a"><script src="/console-assets/admin-tools.js?v=n6" defer></script><script src="/console-assets/security.js?v=n4" defer></script><link rel="stylesheet" href="/console-assets/theme-nai.css?v=n7"><script src="/console-assets/theme-nai.js?v=n6" defer></script><link rel="icon" type="image/png" href="/public-assets/nai-favicon.png"><meta name="theme-color" content="#5b4ce0"></head>
 <body>
 <svg class="icon-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
 <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
@@ -71,7 +71,7 @@
 <ol class="steps"><li>安装 Tampermonkey，再安装 <a href="https://github.com/yunx738/ais2api/raw/main/dual-runtime/tools/ais2api-cookie-sync.user.js" target="_blank" rel="noopener noreferrer">通用版油猴脚本</a>。</li>
 <li>在服务器上执行 <code>node dual-runtime/tools/cookie-sync-key.js</code> 得到同步密钥。</li>
 <li>打开 AI Studio，点脚本的“设置”，填入本后台地址 <code id="script-origin"></code> 和同步密钥。</li></ol>
-<p class="sub">完整说明见 <a href="https://github.com/yunx738/ais2api/blob/main/docs/COOKIE-SYNC.md" target="_blank" rel="noopener noreferrer">油猴脚本教程</a>。同步密钥只能导入和刷新账号，不要公开。</p></div></div>
+<p class="sub"><a href="https://github.com/yunx738/ais2api/blob/main/docs/COOKIE-SYNC.md" target="_blank" rel="noopener noreferrer">油猴脚本教程</a></p></div></div>
 <div class="add-col"><div class="card form-card legacy"><h2>账号密码登录</h2>
 <form id="lf" autocomplete="off" onsubmit="return false">
 <label class="f" for="le">邮箱</label><input id="le" type="email" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -199,7 +199,7 @@
 <li>复制浏览器地址栏中的链接，格式为 <code>https://ai.studio/apps/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</code>，填入下方并保存。</li>
 <li>点“立即生效”，两个实例会依次换号重启并加载新应用；不点则在下次换号时生效。</li>
 </ol>
-<div class="hint-box">应用链接只保存在服务器上，不会写入代码仓库。不要把链接公开，被删除或改为私有后需要重新配置。</div>
+<div class="hint-box">链接不要公开。</div>
 <label class="f" for="taurl2">应用链接</label><input id="taurl2" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://ai.studio/apps/…">
 <pre id="tares2" class="out"></pre>
 </div>
