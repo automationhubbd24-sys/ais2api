@@ -178,7 +178,7 @@ function render(d){
   head.append(identity,statusBadge(label,unhealthy||!s.ready?'warn':s.active?'assigned':'good'));box.append(head);
   const metrics=el('div',undefined,'worker-metrics');
   const quotas=Object.values(s.quota?.models||{}).sort((x,y)=>(Number(y.used)||0)-(Number(x.used)||0)),usedN=quotas.filter(q=>Number(q.used)>0).length,headN=usedN?Math.min(3,usedN):3;
-  for(const [label,value] of [['调度占用',s.active??0],['模型',s.quota?quotas.length:'—'],['待核实执行',pending]]){const metric=el('div');metric.append(el('span',label),el('strong',value));metrics.append(metric);}box.append(metrics);
+  if(s.active||pending){for(const [label,value] of [['调度占用',s.active??0],['待核实执行',pending]]){const metric=el('div');metric.append(el('span',label),el('strong',value));metrics.append(metric);}box.append(metrics);}
   const alerts=[];
   if(s.healthCheck?.error)alerts.push('健康检查失败 '+(s.healthCheck.failureCount||1)+' 次');
   if(s.recoveryBlocked)alerts.push('恢复受阻，请检查实例与登录状态');
@@ -189,8 +189,8 @@ function render(d){
   if(pending)alerts.push(pending+' 个执行等待完成证据，占用已保留');
   if(s.quota?.legacy)alerts.push('历史汇总用量已保留，未归入模型精确计数');
   if(alerts.length){const area=el('div',undefined,'worker-alerts');for(const message of alerts)area.append(el('p',message));box.append(area);}
-   box.append(workerCookie(s,account));
-  const quotaHeader=el('div',undefined,'worker-quota-heading');quotaHeader.append(el('span','模型额度'),el('small','剩余次数'));box.append(quotaHeader);
+   {const f=cookieFacts(account),line=el('div',undefined,'worker-cookie-line');line.append(el('span','Cookie'),el('strong',f.login[0],f.login[1]),el('span','· 到期 '),el('strong',f.expiry[0],f.expiry[1]));line.title='续期：'+f.renew[0];box.append(line);}
+
   if(!s.quota)box.append(el('div','额度状态暂不可用','worker-empty warn'));
   else if(!quotas.length)box.append(el('div','尚未配置模型额度','worker-empty muted'));
   const quotaList=el('div',undefined,'worker-quota-list');let extra=null;
@@ -201,11 +201,11 @@ function render(d){
    if(fraction!==null){const bar=el('progress');bar.max=100;bar.value=fraction*100;bar.setAttribute('aria-label',item.model+' 剩余额度 '+Math.round(fraction*100)+'%');q.append(bar);}
    if(item.legacyBlocked)q.append(el('small','暂停使用至 '+date(item.legacyUntil),'warn'));
    else if(item.cooldownUntil>Date.now())q.append(el('small','冷却至 '+date(item.cooldownUntil),'warn'));
-   else q.append(el('small',item.windowEnd?'窗口结束 '+date(item.windowEnd):'窗口未启用','muted'));
+
    if(index<headN)quotaList.append(q);else extra.append(q);
   });box.append(quotaList);if(extra)box.append(extra);
      const ops=el('div',undefined,'worker-actions');for(const [label,kind,cls] of [['切换账号','rotate','primary'],['重启','restart','']]){const b=el('button',label,cls);b.type='button';b.dataset.workerAction=kind;b.dataset.slot=slot;b.disabled=mutating||!fresh;b.addEventListener('click',()=>{$('slot').value=slot;$(kind).click();});ops.append(b);}box.append(ops);
-  const foot=el('div',undefined,'worker-foot');foot.append(el('span','账号 #'+(s.account??'—')),el('span','最近检查 '+cookieStamp(s.healthCheck?.checkedAt)));box.append(foot);workers.append(box);
+  box.title='最近检查 '+cookieStamp(s.healthCheck?.checkedAt);workers.append(box);
  }
  let cleanupNote=$('cleanup-status');
  if(!cleanupNote){cleanupNote=el('p',undefined,'note');cleanupNote.id='cleanup-status';workers.insertAdjacentElement('afterend',cleanupNote);}

@@ -23,7 +23,7 @@ const quota=i=>{
  }
  return ledger.summary(i+1,policies);
 };
-const accounts=Array.from({length:28},(_,i)=>({id:i+1,name:(names[i%names.length])+' '+(i+1),owner:i===0?'A':i===1?'B':null,cooldownUntil:i===3||i===5?now+60000:0,quota:quota(i)}));
+const accounts=Array.from({length:28},(_,i)=>({id:i+1,name:(names[i%names.length])+' '+(i+1),owner:i===0?'A':i===1?'B':null,cooldownUntil:i===3||i===5?now+3600000:0,quota:quota(i)}));
 const slots=Object.fromEntries(['A','B'].map((slot,i)=>[slot,{ready:true,active:i,account:i+1,quota:quota(i),workerEpoch:'epoch-'+slot,workerHealth:{account:i+1,workerEpoch:'epoch-'+slot,observedAt:now,pendingCompletions:0}}]));
 const cleanupStatus=new (require('./retired-resource-cleanup').RetiredResourceCleanup)({dispatch:{},driver:{root:'/unused'},root:'/unused'}).status();
 const status={halted:false,queue:2,accounts,slots,retiredCleanup:cleanupStatus};

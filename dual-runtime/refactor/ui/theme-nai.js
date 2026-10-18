@@ -26,7 +26,7 @@
 (()=>{
  const ready=()=>{
   const list=document.getElementById('accounts-list');
-  if(list&&!list.querySelector('.nai-acc-hero')){
+  if(false&&list&&!list.querySelector('.nai-acc-hero')){
    const hero=document.createElement('div');hero.className='nai-acc-hero';
    const t=document.createElement('div'),h=document.createElement('h2'),p=document.createElement('p');
    h.textContent='账号池';t.append(h);

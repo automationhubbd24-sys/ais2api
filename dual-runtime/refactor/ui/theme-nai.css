@@ -264,3 +264,35 @@ body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=sett
 .view-cards .account-table tbody tr:has(td[colspan]){grid-column:1/-1}
 @media (hover:none){.view-cards .account-table tbody td:nth-child(7){opacity:1}}
 @media (max-width:639px){.view-cards .account-table tbody{grid-template-columns:1fr;padding:8px 0}}
+
+/* ===== Simplify pass ===== */
+/* Overview: smaller hero, no duplicate stat icons. */
+.nai-hero{min-height:0;padding:16px 20px;margin-bottom:14px;align-items:center}
+.nai-hero img{width:72px;margin:-10px 0 -18px}
+.nai-hero h2{font-size:20px}.nai-chip{margin-top:8px}
+/* Worker card: Cookie in one line, quota list tight. */
+.worker-cookie-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 6px;margin:6px 20px 10px;font-size:12px;color:var(--muted)}
+.worker-cookie-line strong{font-weight:600;color:var(--fg)}.worker-cookie-line strong.good{color:var(--success)}.worker-cookie-line strong.warn{color:var(--warning)}.worker-cookie-line strong.bad{color:var(--danger)}
+.worker-quota-list .quota{padding-top:6px;padding-bottom:6px}
+.worker-quota-list .quota small:empty{display:none}
+/* Accounts: status cards become one row of compact chips. */
+.account-summary{display:flex!important;flex-wrap:wrap;gap:8px!important;margin-bottom:12px!important}
+.account-summary .account-summary-card{display:flex!important;align-items:center;gap:8px;min-height:0!important;padding:6px 12px!important;border-radius:999px!important;background:var(--panel)!important}
+.account-summary .account-summary-card::after,.account-summary .account-summary-card::before{display:none!important}
+.account-summary .account-summary-card>div{display:flex;align-items:baseline;gap:6px}
+.account-summary .account-summary-card span{font-size:12px}
+.account-summary strong{font-size:15px!important;line-height:1.2!important}
+.account-summary .account-summary-card .badge{display:none}
+.account-summary .account-summary-card.selected{background:var(--soft)!important;box-shadow:none!important}
+/* Settings: tabs instead of four stacked groups. */
+.settings-tabs{display:flex;gap:4px;margin:0 0 14px;padding:4px;border:1px solid var(--border);border-radius:12px;background:var(--panel);width:max-content;max-width:100%;overflow-x:auto}
+.settings-tabs button{min-height:34px;padding:0 16px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:13px;white-space:nowrap}
+.settings-tabs button[aria-selected=true]{background:var(--soft);color:var(--primary);font-weight:600}
+.settings-group.tab-hidden{display:none}
+.settings-group>.group-head{margin:0 0 6px;min-height:0}.settings-group>.group-head .group-icon{display:none}.settings-group>.group-head h2{font-size:0;gap:0}.settings-group>.group-head h2 .chip{font-size:12px}
+.settings-group>.group-head:not(:has(.chip)){display:none}
+/* Page header art: shorter. */
+body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=settings],[data-page=add]) .page-header{min-height:76px;padding:14px 20px}
+@media (max-width:720px){body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=settings],[data-page=add]) .page-header{min-height:64px}}
+/* Add-account illustrations: shorter banners. */
+.add-grid .form-card.legacy.nai-art > h2{min-height:64px;padding-top:16px;padding-bottom:14px}

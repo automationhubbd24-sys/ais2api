@@ -88,3 +88,14 @@
   addEventListener('hashchange', updatePage);
   updatePage();
 })();
+
+// Settings: one group at a time behind a tab strip; remembers the last tab.
+(()=>{
+ const bar=document.querySelector('.settings-tabs');if(!bar)return;
+ const groups=[...document.querySelectorAll('#settings .settings-group')];
+ const name=g=>(g.querySelector('.group-head h2')?.firstChild?.textContent||'').trim();
+ let cur=0;try{cur=Math.min(groups.length-1,Math.max(0,Number(localStorage.getItem('ais-settings-tab'))||0));}catch{}
+ const show=i=>{cur=i;groups.forEach((g,n)=>g.classList.toggle('tab-hidden',n!==i));[...bar.children].forEach((b,n)=>b.setAttribute('aria-selected',String(n===i)));try{localStorage.setItem('ais-settings-tab',String(i));}catch{}};
+ groups.forEach((g,i)=>{const b=document.createElement('button');b.type='button';b.role='tab';b.textContent=name(g)||('分组 '+(i+1));b.addEventListener('click',()=>show(i));bar.append(b);});
+ show(cur);
+})();
