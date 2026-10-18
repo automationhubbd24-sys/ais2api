@@ -1825,7 +1825,7 @@ class RequestHandler {
         res.status(200).json(openaiResponse);
       }
     } catch (error) {
-      if (AT.atIsEnabled(model)) { if (!res.destroyed) { if (res.headersSent) this._sendErrorChunkToClient(res,error.message); else this._sendErrorResponse(res,error.status || 502,error.message); } return; }
+      if (AT.atIsEnabled(model)) { if (!res.destroyed) { if (error.atBlock) { const payload = AT.atBlockPayload(error.atBlock, error.status || 502); if (res.headersSent) { if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n'); } else res.status(error.status || 502).type('application/json').send(JSON.stringify(payload)); } else if (res.headersSent) this._sendErrorChunkToClient(res,error.message); else this._sendErrorResponse(res,error.status || 502,error.message); } return; }
       this._handleRequestError(error, res);
     } finally {
       this.connectionRegistry.removeMessageQueue(requestId);
@@ -2294,7 +2294,7 @@ class RequestHandler {
         return r;
       }
       if (attempt > AT.AT_MAX_ATTEMPTS) break;
-      if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) { this.logger.warn('[AT] giving up: finish=' + r.finishReason + ' on round ' + attempt); return null; }
+      if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) { this.logger.warn('[AT] giving up: finish=' + r.finishReason + ' on round ' + attempt); const atBlock = AT.atBlockInfo(current); if (atBlock) { if (attempt > 1) atBlock.promptTokens = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount) ? atUsage.sum.promptTokenCount : null; this.logger.warn('[AT] content blocked by upstream: reason=' + atBlock.reason + ' stage=' + atBlock.stage + ' round=' + attempt + ' promptTokens=' + (atBlock.promptTokens ?? '-')); throw Object.assign(Error('AT_content_blocked'), {status: 502, atBlock}); } return null; }
       this.logger.info('[AT] continuing because ' + (r.found ? 'emit_answer finish=' + r.finishReason : 'no emit_answer (finish=' + (r.finishReason || '-') + ')'));
       lastAnswer = r.answer || lastAnswer;
       if (typeof this._atWaitOperationDone !== /function/.source) throw Error(/AT_cleanup_hook_missing/.source);
@@ -2397,7 +2397,7 @@ class RequestHandler {
         error: {
           code: status || 500,
           message: message,
-          status: "SERVICE_UNAVAILABLE", // 这是一个示例状态名
+          status: ({400: "INVALID_ARGUMENT", 401: "UNAUTHENTICATED", 403: "PERMISSION_DENIED", 404: "NOT_FOUND", 429: "RESOURCE_EXHAUSTED", 500: "INTERNAL", 502: "BAD_GATEWAY", 503: "UNAVAILABLE", 504: "DEADLINE_EXCEEDED"})[status || 500] || "UNKNOWN",
         },
       };
       // 2. 设置响应类型为 application/json 并发送

@@ -77,7 +77,34 @@ function atBuildContinuationBody(googleBody, googleResponse, prevAnswer) {
   const body = Object.assign({}, googleBody, { contents: newContents });
   return body;
 }
+// Upstream content-safety refusals. Retrying the same request may succeed
+// (these are sometimes false positives), but continuing the conversation never helps.
+const AT_BLOCK_REASONS = /^(SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY|OTHER_SAFETY)$/;
+function atBlockInfo(googleResponse) {
+  if (!googleResponse || typeof googleResponse !== 'object') return null;
+  const candidate = Array.isArray(googleResponse.candidates) ? googleResponse.candidates[0] : null;
+  const finish = candidate && typeof candidate.finishReason === 'string' ? candidate.finishReason : null;
+  const promptBlock = googleResponse.promptFeedback && typeof googleResponse.promptFeedback.blockReason === 'string'
+    ? googleResponse.promptFeedback.blockReason : null;
+  let reason = null, stage = null;
+  if (promptBlock && /^[A-Z_]{1,40}$/.test(promptBlock) && promptBlock !== 'BLOCK_REASON_UNSPECIFIED') { reason = promptBlock; stage = 'prompt'; }
+  else if (finish && AT_BLOCK_REASONS.test(finish)) { reason = finish; stage = 'response'; }
+  if (!reason) return null;
+  const u = googleResponse.usageMetadata;
+  const promptTokens = u && Number.isSafeInteger(u.promptTokenCount) && u.promptTokenCount >= 0 ? u.promptTokenCount : null;
+  return { reason, stage, promptTokens };
+}
+function atBlockMessage(info) {
+  return '上游内容安全拦截（' + info.reason + '）：模型拒绝生成，本次没有输出。' +
+    '这类拦截有时是误判，可以直接重试；多次被拦请调整内容。';
+}
+function atBlockPayload(info, httpStatus) {
+  const payload = { error: { code: httpStatus, type: 'content_blocked', status: info.reason, message: atBlockMessage(info), block_stage: info.stage } };
+  if (info.promptTokens !== null) payload.usage = { prompt_tokens: info.promptTokens };
+  return payload;
+}
 module.exports = {
   AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS,
   atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody,
+  atBlockInfo, atBlockMessage, atBlockPayload,
 };

@@ -118,6 +118,7 @@
   if(endedBeforeClose)body.append(node('p','已收到结束标记，连接未正常关闭','warn'));
   if(!Number.isFinite(r.cost?.amount))body.append(node('p','尚未计价：'+(r.cost?.reason||'未记录结束'),'muted'));
   if(r.outcome==='pending')body.append(node('p','可能仍在执行','warn'));
+  const ek=r.metrics?.errorKind;if(ek){const blocked=/^(SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY|OTHER_SAFETY)$/.test(ek);body.append(node('p',(blocked?'上游内容安全拦截：':'错误类型：')+ek+(blocked?'（模型拒绝生成，可重试或调整内容）':''),blocked?'warn':'muted'));}
   const exact=node('div',undefined,'exact-metrics');for(const [title,value] of [['输入 Token',u?.input],['输出 Token',u?.output],['思考 Token',u?.reasoning]])pair(exact,title,fmt(value));body.append(exact);
   body.append(node('code',r.id,'request-id'));detail.append(body);box.append(detail);return box;
  }
