@@ -108,7 +108,39 @@ function atBuildContinuationBody(googleBody, googleResponse, prevAnswer) {
   }
   return body;
 }
-  return { AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, fixTrailingModelTurn, atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody };
+const AT_BLOCK_REASONS = /^(SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY|OTHER_SAFETY)$/;
+function atBlockInfo(googleResponse) {
+  if (!googleResponse || typeof googleResponse !== 'object') return null;
+  const candidate = Array.isArray(googleResponse.candidates) ? googleResponse.candidates[0] : null;
+  const finish = candidate && typeof candidate.finishReason === 'string' ? candidate.finishReason : null;
+  const promptBlock = googleResponse.promptFeedback && typeof googleResponse.promptFeedback.blockReason === 'string'
+    ? googleResponse.promptFeedback.blockReason : null;
+  let reason = null, stage = null;
+  if (promptBlock && /^[A-Z_]{1,40}$/.test(promptBlock) && promptBlock !== 'BLOCK_REASON_UNSPECIFIED') { reason = promptBlock; stage = 'prompt'; }
+  else if (finish && AT_BLOCK_REASONS.test(finish)) { reason = finish; stage = 'response'; }
+  if (!reason) return null;
+  const u = googleResponse.usageMetadata;
+  const promptTokens = u && Number.isSafeInteger(u.promptTokenCount) && u.promptTokenCount >= 0 ? u.promptTokenCount : null;
+  return { reason, stage, promptTokens };
+}
+function atBlockMessage(info) {
+  return '上游内容安全拦截（' + info.reason + '）：模型拒绝生成，本次没有输出。' +
+    '这类拦截有时是误判，可以直接重试；多次被拦请调整内容。';
+}
+// Upstream ended the generation early (finish=OTHER etc.) without emit_answer. Nothing is returned
+// to the client; the error carries the finish reason and token counts so the request record shows why.
+function atFinishPayload(info, httpStatus) {
+  const payload = { error: { code: httpStatus, type: 'upstream_incomplete', status: 'FINISH_' + info.reason,
+    message: '上游中途结束（finish=' + info.reason + '），未返回内容。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } };
+  if (info.promptTokens !== null || info.outputTokens !== null) payload.usage = { prompt_tokens: info.promptTokens, completion_tokens: info.outputTokens };
+  return payload;
+}
+function atBlockPayload(info, httpStatus) {
+  const payload = { error: { code: httpStatus, type: 'content_blocked', status: info.reason, message: atBlockMessage(info), block_stage: info.stage } };
+  if (info.promptTokens !== null) payload.usage = { prompt_tokens: info.promptTokens };
+  return payload;
+}
+  return { AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, fixTrailingModelTurn, atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody, atBlockInfo, atBlockMessage, atBlockPayload, atFinishPayload };
 })();
 
 // ===================================================================================
@@ -1825,7 +1857,7 @@ class RequestHandler {
         res.status(200).json(openaiResponse);
       }
     } catch (error) {
-      if (AT.atIsEnabled(model)) { if (!res.destroyed) { if (error.atBlock) { const payload = AT.atBlockPayload(error.atBlock, error.status || 502); if (res.headersSent) { if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n'); } else res.status(error.status || 502).type('application/json').send(JSON.stringify(payload)); } else if (res.headersSent) this._sendErrorChunkToClient(res,error.message); else this._sendErrorResponse(res,error.status || 502,error.message); } return; }
+      if (AT.atIsEnabled(model)) { if (!res.destroyed) { if (error.atBlock || error.atFinish) { const payload = error.atBlock ? AT.atBlockPayload(error.atBlock, error.status || 502) : AT.atFinishPayload(error.atFinish, error.status || 502); if (res.headersSent) { if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n'); } else res.status(error.status || 502).type('application/json').send(JSON.stringify(payload)); } else if (res.headersSent) this._sendErrorChunkToClient(res,error.message); else this._sendErrorResponse(res,error.status || 502,error.message); } return; }
       this._handleRequestError(error, res);
     } finally {
       this.connectionRegistry.removeMessageQueue(requestId);
@@ -2294,7 +2326,7 @@ class RequestHandler {
         return r;
       }
       if (attempt > AT.AT_MAX_ATTEMPTS) break;
-      if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) { this.logger.warn('[AT] giving up: finish=' + r.finishReason + ' on round ' + attempt); const atBlock = AT.atBlockInfo(current); if (atBlock) { if (attempt > 1) atBlock.promptTokens = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount) ? atUsage.sum.promptTokenCount : null; this.logger.warn('[AT] content blocked by upstream: reason=' + atBlock.reason + ' stage=' + atBlock.stage + ' round=' + attempt + ' promptTokens=' + (atBlock.promptTokens ?? '-')); throw Object.assign(Error('AT_content_blocked'), {status: 502, atBlock}); } return null; }
+      if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) { this.logger.warn('[AT] giving up: finish=' + r.finishReason + ' on round ' + attempt); const atBlock = AT.atBlockInfo(current); if (atBlock) { if (attempt > 1) atBlock.promptTokens = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount) ? atUsage.sum.promptTokenCount : null; this.logger.warn('[AT] content blocked by upstream: reason=' + atBlock.reason + ' stage=' + atBlock.stage + ' round=' + attempt + ' promptTokens=' + (atBlock.promptTokens ?? '-')); throw Object.assign(Error('AT_content_blocked'), {status: 502, atBlock}); } { const c0 = current && current.candidates && current.candidates[0]; let chars = 0; for (const p of ((c0 && c0.content && c0.content.parts) || [])) if (p && typeof p.text === 'string' && !p.thought) chars += p.text.length; const ok = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount); const atFinish = { reason: String(r.finishReason).slice(0, 40).replace(/[^A-Z0-9_]/gi, '_'), round: attempt, chars, promptTokens: ok ? atUsage.sum.promptTokenCount : null, outputTokens: ok && Number.isSafeInteger(atUsage.sum.candidatesTokenCount) ? atUsage.sum.candidatesTokenCount : null }; this.logger.warn('[AT] upstream ended early: finish=' + atFinish.reason + ' round=' + attempt + ' chars=' + chars + ' tok(in/out)=' + (atFinish.promptTokens ?? '-') + '/' + (atFinish.outputTokens ?? '-') + ' ms=' + (roundStartedAt ? Date.now() - roundStartedAt : '-') + '; not continued, nothing returned'); throw Object.assign(Error('AT_upstream_finish_' + atFinish.reason), {status: 502, atFinish}); } }
       this.logger.info('[AT] continuing because ' + (r.found ? 'emit_answer finish=' + r.finishReason : 'no emit_answer (finish=' + (r.finishReason || '-') + ')'));
       lastAnswer = r.answer || lastAnswer;
       if (typeof this._atWaitOperationDone !== /function/.source) throw Error(/AT_cleanup_hook_missing/.source);

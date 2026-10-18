@@ -114,6 +114,20 @@ class RequestHistory{
    await this.persist(row);return copy(row);
   });
  }
+ // Rows still pending long after any execution deadline can never finish (lost finish write,
+ // restart mid-request). Close them as uncertain so the console stops showing them as running.
+ expireStale(maxAgeMs=900000,now=this.clock()){
+  return this.enqueue(async()=>{
+   let n=0;
+   for(const old of [...this.rows.values()]){
+    if(old.phase!=='pending'||now-old.createdAt<maxAgeMs)continue;
+    await this.persist({...old,phase:'finished',outcome:'uncertain',finishedAt:now,httpStatus:null,
+     metrics:metrics({errorKind:'stale_pending'}),cost:{amount:null,currency:'USD',estimated:true,reason:'usage_incomplete'}});
+    n++;
+   }
+   return n;
+  });
+ }
  // Request counts per account/model for quota planning. Days follow Beijing time (UTC+8).
  counts(now=this.clock()){
   const OFF=8*3600000,DAY=86400000,todayStart=Math.floor((now+OFF)/DAY)*DAY-OFF;

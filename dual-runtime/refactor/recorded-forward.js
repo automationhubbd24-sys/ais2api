@@ -20,11 +20,18 @@ function createRecordedForward({history,forward,priceFor=()=>void 0,clock=Date.n
    fs.appendFileSync(missLog,JSON.stringify(row)+'\n',{mode:0o600});
   }catch{}
  };
+ // A slow write pauses recording only until that write actually settles; then recording
+ // resumes on its own. A write that never settles keeps it paused (no queue growth).
  const record=async work=>{
   if(health.recordingPaused)throw Error('History recording paused');
-  try{return await withDeadline(work,recordTimeoutMs,'History recording deadline exceeded');}
+  const op=Promise.resolve().then(work);
+  try{return await withDeadline(()=>op,recordTimeoutMs,'History recording deadline exceeded');}
   catch(error){
-   if(error.message==='History recording deadline exceeded')health.recordingPaused=true;
+   if(error.message==='History recording deadline exceeded'&&!health.recordingPaused){
+    health.recordingPaused=true;health.pausedAt=clock();health.pauses=(health.pauses||0)+1;
+    const resume=()=>{health.recordingPaused=false;health.resumedAt=clock();};
+    op.then(resume,resume);
+   }
    throw error;
   }
  };

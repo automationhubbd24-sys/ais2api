@@ -21,6 +21,8 @@ async function main(){
  if(!history.status().ready)console.error('[Analytics] history unavailable; generation remains enabled');
  const {ModelPriceStore}=require('./model-price-store');
  const priceStore=new ModelPriceStore(path.join(root,'model-prices.json'));
+ const sweepStale=()=>{if(history.status().ready&&typeof history.expireStale==='function')history.expireStale().then(n=>{if(n)console.warn('[Analytics] closed '+n+' stale pending request(s) as uncertain');}).catch(()=>{});};
+ sweepStale();setInterval(sweepStale,300000).unref();
  const recordedForward=createRecordedForward({history,forward:forwardWorker,priceFor:model=>priceStore.get(model),missLog:require('path').join(__dirname,'..','usage-missing.jsonl')});
  const scheduler=new RequestScheduler(dispatch,client,recordedForward,cfg.workers);
  const {QuarantineRecovery}=require('./quarantine-recovery');

@@ -98,6 +98,14 @@ function atBlockMessage(info) {
   return '上游内容安全拦截（' + info.reason + '）：模型拒绝生成，本次没有输出。' +
     '这类拦截有时是误判，可以直接重试；多次被拦请调整内容。';
 }
+// Upstream ended the generation early (finish=OTHER etc.) without emit_answer. Nothing is returned
+// to the client; the error carries the finish reason and token counts so the request record shows why.
+function atFinishPayload(info, httpStatus) {
+  const payload = { error: { code: httpStatus, type: 'upstream_incomplete', status: 'FINISH_' + info.reason,
+    message: '上游中途结束（finish=' + info.reason + '），未返回内容。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } };
+  if (info.promptTokens !== null || info.outputTokens !== null) payload.usage = { prompt_tokens: info.promptTokens, completion_tokens: info.outputTokens };
+  return payload;
+}
 function atBlockPayload(info, httpStatus) {
   const payload = { error: { code: httpStatus, type: 'content_blocked', status: info.reason, message: atBlockMessage(info), block_stage: info.stage } };
   if (info.promptTokens !== null) payload.usage = { prompt_tokens: info.promptTokens };
@@ -106,5 +114,5 @@ function atBlockPayload(info, httpStatus) {
 module.exports = {
   AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS,
   atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody,
-  atBlockInfo, atBlockMessage, atBlockPayload,
+  atBlockInfo, atBlockMessage, atBlockPayload, atFinishPayload,
 };
