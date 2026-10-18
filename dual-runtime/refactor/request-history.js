@@ -116,7 +116,7 @@ class RequestHistory{
  }
  // Rows still pending long after any execution deadline can never finish (lost finish write,
  // restart mid-request). Close them as uncertain so the console stops showing them as running.
- expireStale(maxAgeMs=900000,now=this.clock()){
+ expireStale(maxAgeMs=3600000,now=this.clock()){
   return this.enqueue(async()=>{
    let n=0;
    for(const old of [...this.rows.values()]){

@@ -84,7 +84,7 @@ function forwardWorker(ticket,route,body,res,credentials,options={}){
     else res.destroy();
    }
    finish({uncertain:true});
-  },600000);
+  },2760000);
   res.on('close',disconnect);
   options.signal?.addEventListener('abort',cancel,{once:true});
   upstream.on('error',()=>{
