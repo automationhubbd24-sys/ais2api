@@ -2,7 +2,7 @@
 const {sanitizeRequest,SanitizeError}=require('./request-sanitizer');
 const sanitizeStats={repaired:0,rejected:0,lastRejected:null};
 const http=require('http'),crypto=require('crypto');
-function createServer({keys,models,scheduler,status,actions}){
+function createServer({keys,models,scheduler,status,actions,auth}){
  if(!Array.isArray(keys)||!keys.length||keys.some(k=>typeof k!=='string'||!k))throw Error('API keys required');
  const equal=(a,b)=>{
   const x=Buffer.from(a),y=Buffer.from(b);
@@ -15,7 +15,10 @@ function createServer({keys,models,scheduler,status,actions}){
    const supplied=req.headers['x-goog-api-key']||
     (req.headers.authorization?.startsWith('Bearer ')?req.headers.authorization.slice(7):undefined)||
     req.headers['x-api-key']||url.searchParams.get('key');
-   if(typeof supplied!=='string'||!keys.some(k=>equal(k,supplied)))return json(res,401,{error:'Unauthorized'});
+   const internalPath=url.pathname.startsWith('/internal/');
+   const permitted=auth?(internalPath?auth.isInternal(supplied):auth.allows(supplied,{external:true})):
+    (typeof supplied==='string'&&keys.some(k=>equal(k,supplied)));
+   if(typeof supplied!=='string'||!permitted)return json(res,401,{error:'Unauthorized'});
    if(req.method==='GET' && url.pathname==='/v1/models')
     return json(res,200,{object:'list',data:(typeof models==="function"?models():models).map(id=>({id,object:'model',owned_by:'google'}))});
    if(req.method==='GET' && url.pathname==='/internal/coordinator-status')
@@ -37,6 +40,20 @@ function createServer({keys,models,scheduler,status,actions}){
     if(!body||typeof body!=='object'||Array.isArray(body))throw Object.assign(Error('JSON object required'),{statusCode:400});
     return body;
    };
+   if(auth&&url.pathname.startsWith('/internal/console-auth')){
+    try{
+     if(req.method==='GET'&&url.pathname==='/internal/console-auth')return json(res,200,auth.status());
+     if(req.method==='POST'){
+      const body=await readBody();
+      if(url.pathname==='/internal/console-auth/login')return json(res,200,{ok:auth.verifyLogin(body.secret)});
+      if(url.pathname==='/internal/console-auth/password')return json(res,200,auth.setPassword({current:body.current,next:body.next}));
+      if(url.pathname==='/internal/console-auth/keys')return json(res,200,auth.createKey(body.name));
+      if(url.pathname==='/internal/console-auth/key')return json(res,200,auth.updateKey(String(body.id||''),{disabled:body.disabled,remove:body.remove===true}));
+      if(url.pathname==='/internal/console-auth/internal')return json(res,200,auth.setInternalExternal(body.enabled===true));
+     }
+     return json(res,404,{error:'Not found'});
+    }catch(error){return json(res,[400,403,404,413].includes(error.statusCode)?error.statusCode:500,{error:error.statusCode?error.message:'保存失败'});}
+   }
    if(url.pathname==='/internal/proxies'&&req.method==='GET')
     return json(res,200,await actions.proxies());
    if(['/internal/proxies','/internal/proxies/apply'].includes(url.pathname)&&req.method==='POST'){

@@ -52,7 +52,7 @@
     tr.append(node('td',fmt(i.today.rateLimited)+' / '+fmt(i.week.rateLimited)+' / '+fmt(i.month.rateLimited)));
     tr.append(node('td',i.last429At?time(i.last429At):'—'));body.append(tr);}
    table.append(body);const wrap=node('div',undefined,'count-table-wrap');wrap.append(table);box.append(wrap);
-   box.append(node('p','按北京时间统计。今天从 0 点算起，近 7 天、近 30 天包含今天；429 列依次为今天 / 近 7 天 / 近 30 天。','muted'));
+   box.append(node('p','北京时间 · 429：今天 / 7 天 / 30 天','muted'));
   }catch(e){if(e.name!=='AbortError'){box.replaceChildren(node('p','请求次数读取失败：'+e.message,'warn'));}}
  }
  function recordingWarning(d){const h=d.recording?.history||d.health;return h?.degraded||h?.ready===false||(d.recording?.beginFailures||0)+(d.recording?.finishFailures||0)?' · 统计可能不完整':d.recording?.usageMissing>0?' · 自上次重启有 '+d.recording.usageMissing+' 次成功请求未拿到用量（累计 '+(d.recording.usageMissingTotal||d.recording.usageMissing)+' 次，最近：'+(d.recording.lastUsageMissing?.model||'未知')+'）':d.recording?.usageMissingTotal>0&&d.recording.lastUsageMissing?.at>Date.now()-86400000?' · 24 小时内有成功请求未拿到用量（累计 '+d.recording.usageMissingTotal+' 次，最近：'+(d.recording.lastUsageMissing?.model||'未知')+'）':'';}

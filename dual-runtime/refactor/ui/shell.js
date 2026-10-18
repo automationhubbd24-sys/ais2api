@@ -8,13 +8,13 @@
   const more = document.getElementById('mobile-more');
   const description = document.getElementById('page-description');
   const descriptions = {
-    overview: '服务状态、实例与今日用量',
-    accounts: '账号池、额度与 Cookie 状态',
-    add: 'Cookie 导入、账号密码登录、Workspace 激活与油猴脚本',
-    usage: '请求量、Token、费用与按账号统计',
-    history: '查看每次请求的响应结果与用量',
-    models: '模型清单、额度规则、防截断与参考单价',
-    settings: '运行方式、网络代理与收信设置',
+    overview: '',
+    accounts: '',
+    add: '',
+    usage: '',
+    history: '',
+    models: '',
+    settings: '',
   };
   let restoreOverflow = '';
   let returnFocus = null;
@@ -43,6 +43,7 @@
   function updatePage() {
     const page = location.hash.slice(1);
     description.textContent = descriptions[page] || descriptions.overview;
+    document.body.dataset.page = page || 'overview';
     closeMenu();
     updateMenuState();
   }

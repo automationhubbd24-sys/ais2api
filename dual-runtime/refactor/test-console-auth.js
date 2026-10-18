@@ -1,0 +1,37 @@
+'use strict';
+// Console password / client keys / persisted stream mode.
+const assert=require('node:assert/strict'),http=require('http'),fs=require('fs'),os=require('os'),path=require('path');
+const {ConsoleAuth,StreamMode}=require('./console-auth');
+const {createServer}=require('./coordinator-http');
+(async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ca-'));const internal='internal-key-abcdefghijklmnop';
+ const auth=new ConsoleAuth({file:path.join(dir,'a.json'),internalKey:internal});
+ const server=createServer({keys:[internal],models:()=>['m1'],scheduler:{submit(){}},status:()=>({ok:1}),actions:{},auth});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;
+ const req=(method,p,key,body)=>new Promise((resolve,reject)=>{const data=body?JSON.stringify(body):'';
+  const r=http.request({host:'127.0.0.1',port,path:p,method,headers:{...(key?{Authorization:'Bearer '+key}:{}),'Content-Type':'application/json','Content-Length':Buffer.byteLength(data)}},res=>{let b='';res.on('data',c=>b+=c);res.on('end',()=>resolve({status:res.statusCode,body:b?JSON.parse(b):null}));});r.on('error',reject);r.end(data);});
+ assert.equal((await req('GET','/v1/models',internal)).status,200);
+ assert.equal((await req('GET','/v1/models','wrong')).status,401);
+ assert.equal((await req('POST','/internal/console-auth/login',internal,{secret:internal})).body.ok,true);
+ const created=(await req('POST','/internal/console-auth/keys',internal,{name:'客户端'})).body.created;
+ assert.match(created.key,/^sk-ais-/);
+ assert.equal((await req('GET','/v1/models',created.key)).status,200,'client key works on /v1');
+ assert.equal((await req('GET','/internal/coordinator-status',created.key)).status,401,'client key cannot reach /internal');
+ const st=(await req('GET','/internal/console-auth',internal)).body;assert.equal(st.keys.length,1);assert.equal(JSON.stringify(st).includes(created.key),false,'keys masked');
+ assert.equal((await req('POST','/internal/console-auth/password',internal,{current:'bad',next:'12345678'})).status,403);
+ assert.equal((await req('POST','/internal/console-auth/password',internal,{current:internal,next:'short'})).status,400);
+ assert.equal((await req('POST','/internal/console-auth/password',internal,{current:internal,next:'new-password-1'})).status,200);
+ assert.equal((await req('POST','/internal/console-auth/login',internal,{secret:internal})).body.ok,false,'old login rejected after password');
+ assert.equal((await req('POST','/internal/console-auth/login',internal,{secret:'new-password-1'})).body.ok,true);
+ assert.equal((await req('GET','/v1/models',internal)).status,200,'internal key still a client key by default');
+ assert.equal((await req('POST','/internal/console-auth/internal',internal,{enabled:false})).status,200);
+ assert.equal((await req('GET','/v1/models',internal)).status,401,'internal key restricted');
+ assert.equal((await req('GET','/internal/coordinator-status',internal)).status,200,'internal routes still work');
+ assert.equal((await req('POST','/internal/console-auth/key',internal,{id:created.id,disabled:true})).status,200);
+ assert.equal((await req('GET','/v1/models',created.key)).status,401,'disabled key rejected');
+ const reload=new ConsoleAuth({file:path.join(dir,'a.json'),internalKey:internal});
+ assert.equal(reload.verifyLogin('new-password-1'),true);assert.equal(reload.state.internalExternal,false);
+ assert.equal(fs.statSync(path.join(dir,'a.json')).mode&0o777,0o600);
+ const sm=new StreamMode(path.join(dir,'s.json'));assert.equal(sm.mode,'fake','default fake');sm.set('real');assert.equal(new StreamMode(sm.file).mode,'real');
+ server.close();fs.rmSync(dir,{recursive:true});console.log('PASS: console password, client keys, internal-key restriction, persisted stream mode');
+})().catch(e=>{console.error(e);process.exit(1);});

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>AIS2API 管理后台</title><link rel="stylesheet" href="/console-assets/console.css?v=r2a"><link rel="stylesheet" href="/console-assets/console-panels.css?v=r2a"><link rel="stylesheet" href="/console-assets/models.css?v=r2a"><script src="/console-assets/console.js?v=r2a" defer></script><script src="/console-assets/shell.js?v=r2a" defer></script><script src="/console-assets/models.js?v=r2a" defer></script><link rel="stylesheet" href="/console-assets/analytics.css?v=r2a"><script src="/console-assets/analytics.js?v=r2b" defer></script><script src="/console-assets/prices.js?v=r2a" defer></script><script src="/console-assets/proxies.js?v=r2a" defer></script><link rel="stylesheet" href="/console-assets/admin.css?v=r2a"><script src="/console-assets/admin-tools.js?v=r2a" defer></script></head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>AIS2API 管理后台</title><link rel="stylesheet" href="/console-assets/console.css?v=r2a"><link rel="stylesheet" href="/console-assets/console-panels.css?v=r2a"><link rel="stylesheet" href="/console-assets/models.css?v=r2a"><script src="/console-assets/console.js?v=n4" defer></script><script src="/console-assets/shell.js?v=n3" defer></script><script src="/console-assets/models.js?v=n5" defer></script><link rel="stylesheet" href="/console-assets/analytics.css?v=r2a"><script src="/console-assets/analytics.js?v=r2b" defer></script><script src="/console-assets/prices.js?v=n5" defer></script><script src="/console-assets/proxies.js?v=r2a" defer></script><link rel="stylesheet" href="/console-assets/admin.css?v=r2a"><script src="/console-assets/admin-tools.js?v=r2a" defer></script><script src="/console-assets/security.js?v=n4" defer></script><link rel="stylesheet" href="/console-assets/theme-nai.css?v=n5"><script src="/console-assets/theme-nai.js?v=n3" defer></script><link rel="icon" type="image/png" href="/public-assets/nai-favicon.png"><meta name="theme-color" content="#5b4ce0"></head>
 <body>
 <svg class="icon-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
 <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
@@ -27,7 +27,7 @@
 <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
 </defs></svg>
 <aside class="sidebar" aria-label="控制台侧栏">
-  <a class="brand" href="#overview" aria-label="AIS2API 仪表盘"><span class="logo" aria-hidden="true"><svg class="icon"><use href="#i-model"/></svg></span><span class="brand-copy"><strong>AIS2API</strong><small>管理控制台</small></span></a>
+  <a class="brand" href="#overview" aria-label="AIS2API 仪表盘"><span class="logo" aria-hidden="true"><svg class="icon"><use href="#i-model"/></svg></span><span class="brand-copy"><strong>AIS2API</strong></span></a>
   <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="收起侧栏" aria-expanded="true" title="收起侧栏"><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg><span>收起侧栏</span></button>
   <nav class="sidebar-nav" aria-label="主导航">
 <span class="nav-label">运行</span>
@@ -39,7 +39,7 @@
 <a href="#models" data-page="models" title="模型"><svg class="icon" aria-hidden="true"><use href="#i-model"/></svg><span>模型</span></a>
 <a href="#settings" data-page="settings" title="设置"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>设置</span></a>
 </nav>
-  <div class="aside-bottom"><span class="sidebar-caption">AIS2API</span><button class="icon-button ghost" type="button" data-theme-toggle aria-label="切换深浅主题" title="切换深浅主题"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg></button><a class="icon-button ghost" href="https://github.com/yunx738/ais2api" target="_blank" rel="noopener noreferrer" aria-label="项目 GitHub" title="项目 GitHub"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-4 1-4-2-6-2m12 5v-4a3.5 3.5 0 0 0-1-2.8c3.4-.4 7-1.7 7-7.5A5.8 5.8 0 0 0 19.5 4 5.4 5.4 0 0 0 19.4.2S18.1-.2 15 1.8a13.4 13.4 0 0 0-7 0C4.9-.2 3.6.2 3.6.2A5.4 5.4 0 0 0 3.5 4 5.8 5.8 0 0 0 2 7.7c0 5.8 3.6 7.1 7 7.5A3.5 3.5 0 0 0 8 18v4" transform="translate(1 1) scale(.9)"/></svg></a></div>
+  <div class="aside-bottom"><span class="sidebar-caption"></span><button class="icon-button ghost" type="button" data-theme-toggle aria-label="切换深浅主题" title="切换深浅主题"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg></button><a class="icon-button ghost" href="https://github.com/yunx738/ais2api" target="_blank" rel="noopener noreferrer" aria-label="项目 GitHub" title="项目 GitHub"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-4 1-4-2-6-2m12 5v-4a3.5 3.5 0 0 0-1-2.8c3.4-.4 7-1.7 7-7.5A5.8 5.8 0 0 0 19.5 4 5.4 5.4 0 0 0 19.4.2S18.1-.2 15 1.8a13.4 13.4 0 0 0-7 0C4.9-.2 3.6.2 3.6.2A5.4 5.4 0 0 0 3.5 4 5.8 5.8 0 0 0 2 7.7c0 5.8 3.6 7.1 7 7.5A3.5 3.5 0 0 0 8 18v4" transform="translate(1 1) scale(.9)"/></svg></a></div>
 </aside>
 <main>
   <div class="mobile-topbar"><button class="icon-button ghost menu-trigger" type="button" data-more-open aria-label="打开更多菜单" aria-haspopup="dialog" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button><a class="mobile-brand" href="#overview"><span class="logo" aria-hidden="true"><svg class="icon"><use href="#i-model"/></svg></span><strong>AIS2API</strong></a><span class="console-tag">控制台</span><button class="icon-button ghost" type="button" data-theme-toggle aria-label="切换深浅主题" title="切换深浅主题"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg></button></div>
@@ -47,8 +47,8 @@
 <div id="notice" role="status" aria-live="polite" hidden></div>
 <section id="overview" class="page">
 <div class="stats"><article class="card stat"><i class="stat-icon success-icon" aria-hidden="true"><svg class="icon"><use href="#i-server"/></svg></i><span>调度服务</span><strong id="service">—</strong><small id="service-note">等待状态数据</small></article><article class="card stat"><i class="stat-icon warning-icon" aria-hidden="true"><svg class="icon"><use href="#i-clock"/></svg></i><span>排队请求</span><strong id="queued">—</strong></article><article class="card stat"><i class="stat-icon" aria-hidden="true"><svg class="icon"><use href="#i-activity"/></svg></i><span>调度占用</span><strong id="active">—</strong></article><article class="card stat"><i class="stat-icon info-icon" aria-hidden="true"><svg class="icon"><use href="#i-users"/></svg></i><span>账号总数</span><strong id="account-count">—</strong></article></div>
-<div class="section-head"><div><h2>工作实例</h2><p class="muted">实例状态与模型额度</p></div><span class="section-meta"><i class="status-dot"></i>每 5 秒更新</span></div><div id="workers" class="workers"><div class="card empty">正在读取实例状态…</div></div>
-<div id="instance-ops" class="card form-card"><div class="section-head"><div><h2>实例操作</h2><p class="muted">切换账号或重启实例；实例卡片上的按钮会自动选好实例</p></div></div><div class="form-row"><label>实例<select id="slot"><option value="A">实例 A</option><option value="B">实例 B</option></select></label><label>目标账号<select id="target"><option value="">自动选择下一账号</option></select></label><button id="rotate" class="primary">切换账号</button><button id="restart">重启实例</button></div></div>
+<div class="section-head"><div><h2>工作实例</h2></div></div><div id="workers" class="workers"><div class="card empty">正在读取实例状态…</div></div>
+<div id="instance-ops" class="card form-card"><div class="section-head"><div><h2>实例操作</h2></div></div><div class="form-row"><label>实例<select id="slot"><option value="A">实例 A</option><option value="B">实例 B</option></select></label><label>目标账号<select id="target"><option value="">自动选择下一账号</option></select></label><button id="rotate" class="primary">切换账号</button><button id="restart">重启实例</button></div></div>
 </section>
 <section id="accounts" class="page" hidden><div class="page-actions"><div class="section-tabs" role="tablist" aria-label="账号页面"><a href="#accounts" data-subtab="list" role="tab"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg>账号列表</a><a href="#add" data-subtab="add" role="tab"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>添加账号</a></div><div class="tools" id="account-list-tools"><button id="sync"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>同步账号</button></div></div>
 <div id="accounts-list">
@@ -59,7 +59,7 @@
 <dialog id="account-dialog" aria-labelledby="account-dialog-title"><div class="dialog-head"><div><h2 id="account-dialog-title">账号详情</h2><span id="account-dialog-subtitle" class="muted"></span></div><button id="account-dialog-close" class="icon-button" aria-label="关闭账号详情">×</button></div><div class="dialog-body"><div id="quota-accounts" class="quota-accounts"></div></div></dialog>
 </div>
 <div id="accounts-add" class="add-grid" hidden>
-<div class="add-col"><div class="card form-card legacy"><h2>Cookie 导入<span class="sub">粘贴或上传导出的 Cookie JSON</span></h2>
+<div class="add-col"><div class="card form-card legacy"><h2>Cookie 导入</h2>
 <label class="f" for="file">JSON 文件</label><input id="file" type="file" accept=".json,application/json">
 <label class="f" for="raw">或粘贴</label>
 <textarea id="raw" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="[…] 或 {cookies:[…],origins:[…]}"></textarea>
@@ -67,12 +67,12 @@
 <label class="f" for="ctier">账号分类</label><select id="ctier"><option value="standard">普通账号（参与轮换）</option><option value="pro">Pro 账号（4a 每天 50 次）</option><option value="ultra">Ultra 5x 账号（4a 每天 100 次）</option><option value="ultra20">Ultra 20x 账号（4a 每天 200 次）</option></select>
 <div class="btns"><button id="convert" type="button">校验</button><button id="send" class="primary" type="button" disabled>导入</button><button id="clear" type="button">清空</button></div>
 <pre id="result" class="out" role="status" aria-live="polite"></pre></div>
-<div class="card form-card legacy"><h2>浏览器油猴脚本<span class="sub">在已登录 Google 的浏览器里一键导入、自动刷新 Cookie</span></h2>
+<div class="card form-card legacy"><h2>浏览器油猴脚本</h2>
 <ol class="steps"><li>安装 Tampermonkey，再安装 <a href="https://github.com/yunx738/ais2api/raw/main/dual-runtime/tools/ais2api-cookie-sync.user.js" target="_blank" rel="noopener noreferrer">通用版油猴脚本</a>。</li>
 <li>在服务器上执行 <code>node dual-runtime/tools/cookie-sync-key.js</code> 得到同步密钥。</li>
 <li>打开 AI Studio，点脚本的“设置”，填入本后台地址 <code id="script-origin"></code> 和同步密钥。</li></ol>
 <p class="sub">完整说明见 <a href="https://github.com/yunx738/ais2api/blob/main/docs/COOKIE-SYNC.md" target="_blank" rel="noopener noreferrer">油猴脚本教程</a>。同步密钥只能导入和刷新账号，不要公开。</p></div></div>
-<div class="add-col"><div class="card form-card legacy"><h2>账号密码登录<span class="sub">自动登录 Google 并保存登录状态</span></h2>
+<div class="add-col"><div class="card form-card legacy"><h2>账号密码登录</h2>
 <form id="lf" autocomplete="off" onsubmit="return false">
 <label class="f" for="le">邮箱</label><input id="le" type="email" autocomplete="off" autocapitalize="off" spellcheck="false">
 <label class="f" for="lp">密码</label><input id="lp" type="password" autocomplete="new-password">
@@ -91,45 +91,41 @@
 </div>
 </section>
 <section id="models" class="page" hidden>
-<div class="section-head"><div><h2>模型规则</h2><p class="muted">选中模型后分别保存额度规则和参考单价</p></div><button id="catalog-read">刷新目录状态</button></div>
-
-<p id="catalog-message" role="status" aria-live="polite" class="muted">等待读取目录状态</p>
-
-<div class="model-rules"><div class="card form-card"><div class="section-head"><div><h2>额度与防截断</h2><p class="muted">按模型设置额度类别和是否允许防截断续传</p></div></div>
-
+<div class="mdl-top"><div id="catalog-workers" class="workers mdl-workers"></div><button id="catalog-read" type="button">刷新目录</button></div>
+<p id="catalog-message" role="status" aria-live="polite" class="muted"></p>
+<div class="model-rules mdl-rules">
+<div class="card form-card mdl-card mdl-card-policy"><div class="section-head"><h2>额度规则</h2></div>
 <div class="form-row">
 <label>模型<select id="policy-model"><option value="">先刷新目录</option></select></label>
-<label>额度类别<select id="policy-bucket"><option value="">请选择</option><option value="flash">Flash · 每模型 100（Ultra 500）</option><option value="pro">Pro · 普通账号 10 / Pro 50 / Ultra 5x 100 / Ultra 20x 200</option><option value="ultra">高级 · Pro 50 / Ultra 5x 100 / Ultra 20x 200，仅 Pro/Ultra 账号</option></select></label>
-<label><input id="policy-anti" type="checkbox">允许防截断续传</label>
-<button id="policy-save" class="primary" disabled>保存规则</button></div>
-<p id="policy-message" role="status">尚未读取策略</p></div>
-<div class="card form-card">
- <div class="section-head"><div><h2>参考单价</h2><p class="muted">USD / 百万 Token，用于估算费用</p></div><button id="price-read" type="button">重新读取</button></div>
- <p id="price-message" role="status">尚未读取价格</p>
- <form id="price-form" class="form-row">
- <label>原模型<select id="price-model" required><option value="">先读取价格配置</option></select></label>
- <label>输入单价<input id="price-input" type="number" min="0" max="1000000" step="any" placeholder="未知"></label>
- <label>输出单价<input id="price-output" type="number" min="0" max="1000000" step="any" placeholder="未知"></label>
- <label>原生思考 Token 计价<select id="price-reasoning-mode"><option value="unknown">未知，暂不估价</option><option value="separate">按思考单价另计</option><option value="included">已包含，不另计</option></select></label>
- <label>思考单价<input id="price-reasoning" type="number" min="0" max="1000000" step="any" placeholder="未知"></label>
- <label>生效时间（北京时间，留空=立即）<input id="price-effective" type="datetime-local"></label>
-<button id="price-save" type="submit" class="primary" disabled>保存参考单价</button>
-<button id="price-clear-scheduled" type="button" disabled>取消计划调价</button>
+<label>额度类别<select id="policy-bucket"><option value="">请选择</option><option value="flash" title="每模型 100（Ultra 500）">Flash · 100 / Ultra 500</option><option value="pro" title="普通账号 10 / Pro 50 / Ultra 5x 100 / Ultra 20x 200">Pro · 10 / 50 / 100 / 200</option><option value="ultra" title="Pro 50 / Ultra 5x 100 / Ultra 20x 200，仅 Pro/Ultra 账号">高级 · 仅 Pro / Ultra</option></select></label>
+<label class="mdl-check"><input id="policy-anti" type="checkbox">防截断续传</label>
+<button id="policy-save" class="primary" disabled>保存</button></div>
+<p id="policy-message" role="status"></p></div>
+<div class="card form-card mdl-card mdl-card-price"><div class="section-head"><h2>参考单价 <small class="muted">USD / 百万 Token</small></h2><button id="price-read" type="button" class="icon-button" title="重新读取" aria-label="重新读取"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg></button></div>
+<form id="price-form" class="form-row">
+<label class="mdl-wide">模型<select id="price-model" required><option value="">先读取价格配置</option></select></label>
+<label>输入<input id="price-input" type="number" min="0" max="1000000" step="any" placeholder="未知"></label>
+<label>输出<input id="price-output" type="number" min="0" max="1000000" step="any" placeholder="未知"></label>
+<details class="mdl-more"><summary>更多选项</summary><div class="form-row">
+<label>思考 Token<select id="price-reasoning-mode"><option value="unknown">未知，暂不估价</option><option value="separate">另计</option><option value="included">已包含</option></select></label>
+<label>思考单价<input id="price-reasoning" type="number" min="0" max="1000000" step="any" placeholder="未知"></label>
+<label>生效时间（北京时间）<input id="price-effective" type="datetime-local"></label>
+<button id="price-clear-scheduled" type="button" disabled>取消计划调价</button></div></details>
+<button id="price-save" type="submit" class="primary" disabled>保存</button>
 <p id="price-scheduled" class="muted"></p>
- </form>
- 
- </div>
+</form>
+<p id="price-message" role="status"></p></div>
 </div>
-<div id="catalog-workers" class="workers"></div>
-<div class="section-head"><h2>模型清单</h2><label>筛选模型 <input id="catalog-search" type="search" placeholder="输入模型名称" maxlength="200"></label></div>
-<div class="card table-wrap"><table><thead><tr><th>模型</th><th>实例 / 账号</th><th>能力</th><th>目录更新时间</th></tr></thead><tbody id="catalog-rows"></tbody></table></div>
+<div class="section-head mdl-list-head"><h2>模型清单</h2><input id="catalog-search" type="search" placeholder="筛选模型" aria-label="筛选模型" maxlength="200"></div>
+<div class="card table-wrap"><table><thead><tr><th>模型</th><th>实例</th><th>近 30 天</th><th>能力</th></tr></thead><tbody id="catalog-rows"></tbody></table></div>
+<button id="catalog-more" type="button" class="catalog-more" hidden></button>
 </section>
 <section id="usage" class="page" hidden>
  <div class="usage-toolbar"><label><span class="sr-only">时间范围</span><select id="usage-range"><option value="today">今日</option><option value="7">近 7 天</option><option value="30">近 30 天</option><option value="all">全部记录</option></select></label><button id="usage-refresh"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>刷新统计</button></div>
  <p id="usage-message" class="muted" role="status">等待读取</p>
  <div id="usage-cards" class="stats"></div>
  <div class="card distribution-card"><div class="section-head"><div class="heading-icon"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg><div><h2>模型统计</h2></div></div></div><div id="usage-models"></div></div>
- <div class="card"><div class="section-head"><div class="heading-icon"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg><div><h2>请求次数</h2><p class="muted">按账号和模型统计，用于确定额度上限</p></div></div></div><div id="usage-counts"><p class="muted">读取中</p></div></div>
+ <div class="card"><div class="section-head"><div class="heading-icon"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg><div><h2>请求次数</h2></div></div></div><div id="usage-counts"><p class="muted">读取中</p></div></div>
 </section>
  <section id="history" class="page" hidden>
  <form id="history-filter" class="card form-row">
@@ -141,7 +137,19 @@
  <div class="pager"><button id="history-prev" disabled>上一页</button><span id="history-page">第 1 页</span><button id="history-next" disabled>下一页</button></div>
  </section>
  <section id="settings" class="page" hidden>
-<div class="settings-group"><div class="group-head"><span class="group-icon"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg></span><div><h2>运行 <span id="mchip" class="chip"><i></i><span id="mtext">…</span></span></h2><p class="muted">响应方式、AI Studio 应用与实例分配</p></div></div><div class="settings-cards"><div class="card form-card"><h2>流式模式</h2><p>当前模式 <span id="mode-current" class="badge">—</span></p><div class="form-row"><label>响应方式<select id="mode"><option value="fake">Fake · 缓冲后发送</option><option value="real">Real · 流式转发</option></select></label><button id="save-mode" class="primary">应用到 A / B</button></div></div>
+<div class="settings-group nai-security"><div class="group-head"><span class="group-icon"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg></span><div><h2>安全</h2></div></div><div class="settings-cards">
+<div class="card form-card sec-card sec-pw"><h2>登录密码 <span id="pw-state" class="badge">—</span></h2>
+<form id="pw-form" class="form-row" autocomplete="on"><input type="text" name="username" value="admin" autocomplete="username" hidden>
+<label>当前密码<input id="pw-current" type="password" autocomplete="current-password" required maxlength="512"></label>
+<label>新密码<input id="pw-next" type="password" autocomplete="new-password" required minlength="8" maxlength="128" placeholder="至少 8 位"></label>
+<label>确认新密码<input id="pw-again" type="password" autocomplete="new-password" required minlength="8" maxlength="128"></label>
+<button id="pw-save" type="submit" class="primary">修改</button></form><p id="pw-msg" role="status"></p></div>
+<div class="card form-card sec-card sec-keys"><h2>API Key</h2>
+<form id="key-form" class="form-row"><label>名称<input id="key-name" maxlength="40" placeholder="如：酒馆、手机"></label><button id="key-create" type="submit" class="primary">新建 Key</button></form>
+<div id="key-new" class="key-new" hidden><code id="key-new-value"></code><button id="key-copy" type="button">复制</button><small>只显示这一次</small></div>
+<ul id="key-list" class="key-list"></ul><p id="key-msg" role="status"></p></div>
+</div></div>
+<div class="settings-group"><div class="group-head"><span class="group-icon"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg></span><div><h2>运行 <span id="mchip" class="chip"><i></i><span id="mtext">…</span></span></h2></div></div><div class="settings-cards"><div class="card form-card"><h2>传输方式 <span id="mode-current" class="badge">—</span></h2><div class="form-row"><label>响应方式<select id="mode"><option value="fake">假流式（默认）</option><option value="real">真流式</option></select></label><button id="save-mode" class="primary">保存</button></div></div>
 <div class="card form-card legacy"><h2>AI Studio 应用<button id="tahelp" type="button" style="min-height:32px;padding:0 12px;font-size:13px">教程</button></h2>
 <div id="tastat" class="sub"></div>
 <label class="f" for="taurl">应用链接</label><input id="taurl" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://ai.studio/apps/…">
@@ -151,7 +159,7 @@
 <div class="card form-card legacy"><div class="sw"><div><b>Pro/Ultra 专用实例</b><div id="usub" class="sub"></div></div><input id="uon" type="checkbox" aria-label="Pro/Ultra 专用实例"></div>
 <label class="f" for="uslot">专用实例</label><select id="uslot"><option value="A">实例 A</option><option value="B">实例 B</option></select>
 <div id="ulist" class="sub" style="margin-top:8px"></div><pre id="ures" class="out"></pre></div></div></div>
-<div class="settings-group"><div class="group-head"><span class="group-icon"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg></span><div><h2>网络</h2><p class="muted">实例出口代理与登录代理</p></div></div><div class="settings-cards"><div class="card form-card"><div class="section-head"><h2>A / B · SOCKS5 代理</h2><button type="button" id="proxy-read">重新读取</button></div>
+<div class="settings-group"><div class="group-head"><span class="group-icon"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg></span><div><h2>网络</h2></div></div><div class="settings-cards"><div class="card form-card"><div class="section-head"><h2>A / B · SOCKS5 代理</h2><button type="button" id="proxy-read">重新读取</button></div>
  
  <p id="proxy-message" role="status">尚未读取代理配置</p><div id="proxy-forms"></div></div>
 
@@ -163,7 +171,7 @@
 <label class="chk"><input id="pxe" type="checkbox" checked>启用</label>
 <div class="btns"><button id="pxsave" class="primary" type="button">保存</button><button id="pxclear" type="button">恢复默认</button></div>
 </form></div></div></div>
-<div class="settings-group"><div class="group-head"><span class="group-icon"><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg></span><div><h2>收信</h2><p class="muted">Workspace 激活需要的域名与收信邮箱</p></div></div><div class="settings-cards"><div class="card form-card legacy" id="wcfgbox"><h2>Workspace 与收信</h2>
+<div class="settings-group"><div class="group-head"><span class="group-icon"><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg></span><div><h2>收信</h2></div></div><div class="settings-cards"><div class="card form-card legacy" id="wcfgbox"><h2>Workspace 与收信</h2>
 <form onsubmit="return false" autocomplete="off">
 <label class="f" for="wdom">Workspace 账号域名</label><input id="wdom" autocapitalize="off" spellcheck="false" placeholder="example.com">
 <label class="f" for="wprovider">收信方式</label><select id="wprovider"><option value="tempmail">Cloudflare 临时邮箱 API</option><option value="graph">Microsoft Graph</option></select>
@@ -208,7 +216,7 @@
 </nav>
 <dialog id="more-menu" class="more-sheet" aria-labelledby="more-title">
   <div class="sheet-handle" aria-hidden="true"></div>
-  <div class="sheet-heading"><div><h2 id="more-title">更多菜单</h2><p class="muted">请求记录、设置与添加账号</p></div><button id="more-close" class="icon-button ghost" type="button" aria-label="关闭更多菜单"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+  <div class="sheet-heading"><div><h2 id="more-title">更多菜单</h2></div><button id="more-close" class="icon-button ghost" type="button" aria-label="关闭更多菜单"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
   <div class="sheet-grid">
     <a href="#history" data-page="history"><span class="sheet-icon"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg></span><span>请求记录</span></a>
     <a href="#settings" data-page="settings"><span class="sheet-icon"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg></span><span>设置</span></a>

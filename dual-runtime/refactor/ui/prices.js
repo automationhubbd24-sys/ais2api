@@ -36,8 +36,9 @@
  function render(data){
   snapshot=data;
   const selected=$('price-model').value;
-  $('price-model').replaceChildren(new Option('请选择原模型',''));
-  for(const model of data.models)$('price-model').add(new Option(model,model));
+  $('price-model').replaceChildren(new Option('请选择模型',''));
+  const w=typeof window==='object'?window:null;if(w?.aisModelUsage?.size&&w.aisOrderModelSelect)w.aisOrderModelSelect($('price-model'),data.models);
+  else for(const model of data.models)$('price-model').add(new Option(model,model));
   if(data.models.includes(selected))$('price-model').value=selected;
   valid=!data.blocked;fill();
  }
@@ -86,6 +87,7 @@
  });
  $('price-model').addEventListener('change',fill);
  $('price-read').addEventListener('click',load);
+ if(typeof document.addEventListener==='function')document.addEventListener('ais-model-usage',()=>{if(snapshot)render(snapshot);});
  addEventListener('hashchange',()=>{if(location.hash==='#models'&&!snapshot)load();});
  if(location.hash==='#models')load();
  controls();
