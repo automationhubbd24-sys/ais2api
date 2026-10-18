@@ -234,3 +234,33 @@ body:is([data-page=models],[data-page=usage],[data-page=history],[data-page=sett
 .count-table td.warn429{color:var(--danger);font-weight:600;cursor:help}
 .count-more{display:block;margin:10px auto 0;font-size:12px}
 @media (max-width:639px){.count-table th,.count-table td{padding:6px 6px}.count-table td.mdl{max-width:120px;overflow:hidden;text-overflow:ellipsis}}
+
+/* ===== Accounts: card grid view (default) ===== */
+.view-toggle{display:inline-flex;margin-left:auto;padding:3px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+.view-toggle button{min-height:30px;padding:0 12px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:12px}
+.view-toggle button[aria-pressed=true]{background:var(--soft);color:var(--primary);font-weight:600}
+.acc-top{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.acc-top i{font-style:normal;font-size:10px;padding:1px 7px;border-radius:999px;background:var(--inset);color:var(--muted);white-space:nowrap}
+.view-cards .account-table{min-width:0!important;display:block}
+.view-cards .account-table thead{display:none}
+.view-cards .account-table tbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;padding:12px}
+.view-cards .card.table-wrap{background:transparent;border:0;overflow:visible}
+.view-cards .account-table tbody tr{position:relative;display:grid;grid-template-columns:1fr auto;gap:8px 10px;align-content:start;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--panel);transition:border-color .15s,transform .15s}
+.view-cards .account-table tbody tr:hover{border-color:color-mix(in srgb,var(--primary) 40%,var(--border));transform:translateY(-1px);background:var(--panel)}
+.view-cards .account-table tbody td{display:block;padding:0!important;border:0!important;min-width:0}
+.view-cards .account-table tbody td[hidden]{display:none}
+.view-cards .account-table tbody td:nth-child(1){grid-column:1;grid-row:1}
+.view-cards .account-table tbody td:nth-child(4){grid-column:2;grid-row:1;justify-self:end;align-self:start}
+.view-cards .account-table tbody td:nth-child(3){grid-column:1/-1;grid-row:2}
+.view-cards .account-table tbody td:nth-child(2){grid-column:1;grid-row:3;align-self:center}
+.view-cards .account-table tbody td:nth-child(5){grid-column:1/-1;grid-row:4;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px}
+.view-cards .account-table tbody td:nth-child(5) small{margin:0}
+.view-cards .account-table tbody td:nth-child(6){display:none}
+.view-cards .account-table tbody td:nth-child(7){grid-column:2;grid-row:3;justify-self:end;display:flex;gap:4px;opacity:.35;transition:opacity .15s}
+.view-cards .account-table tbody tr:hover td:nth-child(7),.view-cards .account-table tbody tr:focus-within td:nth-child(7){opacity:1}
+.view-cards .account-table tbody td:nth-child(7) button{min-height:28px;padding:0 8px;font-size:11px}
+.view-cards .account-table .account-model-quota{width:100%;max-width:none}
+.view-cards .account-table tbody td[colspan]{grid-column:1/-1}
+.view-cards .account-table tbody tr:has(td[colspan]){grid-column:1/-1}
+@media (hover:none){.view-cards .account-table tbody td:nth-child(7){opacity:1}}
+@media (max-width:639px){.view-cards .account-table tbody{grid-template-columns:1fr;padding:8px 0}}

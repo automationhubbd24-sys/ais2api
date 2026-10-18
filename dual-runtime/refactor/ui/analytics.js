@@ -154,12 +154,14 @@
   const models=Object.values(a.quota.models||{});if(!models.length){box.append(node('div','尚未配置模型额度策略','empty'));return;}
   const heading=node('div',undefined,'quota-section-heading');heading.append(node('h3','模型额度'),node('span',models.length+' 个模型','badge'));box.append(heading);
   const list=node('div',undefined,'quota-model-list');
+  models.sort((x,y)=>(Number(y.used)||0)-(Number(x.used)||0));const idleCount=models.filter(q=>!(Number(q.used)>0)).length,anyUsed=idleCount<models.length;
   for(const q of models){
    const row=node('div',undefined,'quota'),line=node('div',undefined,'quota-label'),unlimited=q.limit===null&&Number.isFinite(q.used),valid=Number.isFinite(q.used)&&Number.isFinite(q.limit)&&q.limit>0,remaining=valid?Math.max(0,q.limit-q.used):undefined,percent=valid?remaining/q.limit*100:undefined;
    const name=node('div',undefined,'quota-model-name');name.append(node('strong',q.model),node('small',q.legacyBlocked?'历史记录待核实':unlimited?'已记录 '+fmt(q.used)+' 次 · 不设上限，直到 429':valid?'已记录 '+fmt(q.used)+' 次 / 上限 '+fmt(q.limit)+' 次':'额度信息未提供'));
    const state=node('div',undefined,'quota-model-state'),reset=q.legacyBlocked?'历史窗口截止 '+time(q.legacyUntil):q.cooldownUntil>Date.now()?'冷却至 '+time(q.cooldownUntil):q.windowEnd?'窗口结束 '+time(q.windowEnd):'额度窗口尚未启用';state.append(node('small',reset,q.cooldownUntil>Date.now()?'warn':''),node('strong',q.legacyBlocked?'待核实':unlimited?'不限':valid?fmt(percent)+'%':'未知',q.legacyBlocked?'warn':''));line.append(name,state);row.append(line);
-   if(valid&&!q.legacyBlocked){const bar=node('progress');bar.max=q.limit;bar.value=remaining;bar.setAttribute('aria-label',q.model+' 剩余次数 '+remaining);if(percent<=20)bar.className='quota-low';row.append(bar);}list.append(row);
+   if(valid&&!q.legacyBlocked){const bar=node('progress');bar.max=q.limit;bar.value=remaining;bar.setAttribute('aria-label',q.model+' 剩余次数 '+remaining);if(percent<=20)bar.className='quota-low';row.append(bar);}if(anyUsed&&!(Number(q.used)>0)){row.hidden=true;row.classList.add('idle');}list.append(row);
   }box.append(list);
+  if(anyUsed&&idleCount){const more=node('button','显示未使用模型（'+idleCount+'）','count-more');more.type='button';more.onclick=()=>{const open=more.dataset.open!=='1';list.querySelectorAll('.quota.idle').forEach(r=>r.hidden=!open);more.dataset.open=open?'1':'';more.textContent=open?'收起未使用':'显示未使用模型（'+idleCount+'）';};box.append(more);}
  }
  function pageChanged(){if(location.hash==='#usage')loadUsage();if(location.hash==='#history')loadHistory();}
  byId('usage-refresh').addEventListener('click',loadUsage);byId('usage-range').addEventListener('change',loadUsage);byId('history-refresh').addEventListener('click',loadHistory);

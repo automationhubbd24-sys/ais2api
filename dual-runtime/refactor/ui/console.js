@@ -26,6 +26,9 @@ function setupAccountColumns(){
  accountColumns.forEach((name,index)=>{const label=el('label'),input=el('input');input.type='checkbox';input.checked=!hiddenAccountColumns.has(index);input.disabled=index===0||index===6;
   input.addEventListener('change',()=>{if(input.checked)hiddenAccountColumns.delete(index);else hiddenAccountColumns.add(index);try{localStorage.setItem('ais-account-columns-v2',JSON.stringify([...hiddenAccountColumns]));}catch{}applyAccountColumns();});label.append(input,document.createTextNode(name));options.append(label);});
  details.append(summary,options);toolbar.append(details);applyAccountColumns();
+ {const list=$('accounts-list'),view=el('div',undefined,'view-toggle');let v='cards';try{v=localStorage.getItem('ais-account-view')||'cards';}catch{}
+  const set=k=>{list.classList.toggle('view-cards',k==='cards');for(const b of view.children)b.setAttribute('aria-pressed',String(b.dataset.view===k));try{localStorage.setItem('ais-account-view',k);}catch{}};
+  for(const [k,t] of [['cards','卡片'],['table','列表']]){const b=el('button',t);b.type='button';b.dataset.view=k;b.addEventListener('click',()=>set(k));view.append(b);}toolbar.append(view);set(v);}
  document.addEventListener('click',event=>{if(!details.contains(event.target))details.open=false;});details.addEventListener('keydown',event=>{if(event.key==='Escape'){details.open=false;summary.focus();}});
 }
 function notice(message){$('notice').textContent=message;$('notice').hidden=!message;}
@@ -123,6 +126,7 @@ function renderAccountRows(d=state){
   if(fraction!==null){const bar=el('progress');bar.max=100;bar.value=fraction*100;bar.setAttribute('aria-label','剩余额度 '+Math.round(fraction*100)+'%');quotaBox.append(bar);}
   else quotaBox.append(el('span',undefined,'quota-unknown-track'));
   quotaBox.append(el('small',models.some(q=>q.legacyBlocked)?'含待核实模型':models.some(q=>q.cooldownUntil>Date.now())?'部分模型冷却中':fraction===null?'额度未知':'剩余额度'));
+  {const top=models.filter(q=>Number(q.used)>0).sort((x,y)=>y.used-x.used).slice(0,2);if(top.length){const t=el('span',undefined,'acc-top');for(const q of top)t.append(el('i',String(q.model).replace(/^gemini-/,'')+' · '+q.used));quotaBox.append(t);}}
   quotaCell.append(quotaBox);row.append(quotaCell);
   const statusCell=el('td'),kind=accountState(a);statusCell.append(statusBadge(kind==='invalid'?'登录失效':kind==='cooling'?'冷却中':kind==='assigned'?'已分配':'备用',kind==='invalid'?'warn':kind==='cooling'?'warn':kind==='available'?'good':'assigned'));row.append(statusCell);
   row.append(cookieCell(a));
@@ -173,7 +177,7 @@ function render(d){
   const unhealthy=s.healthCheck?.error||s.legacyUnresolved||s.rotationBlocked||s.recoveryBlocked||(healthFresh&&health.hardQuarantine);
   head.append(identity,statusBadge(label,unhealthy||!s.ready?'warn':s.active?'assigned':'good'));box.append(head);
   const metrics=el('div',undefined,'worker-metrics');
-  const quotas=Object.values(s.quota?.models||{});
+  const quotas=Object.values(s.quota?.models||{}).sort((x,y)=>(Number(y.used)||0)-(Number(x.used)||0)),usedN=quotas.filter(q=>Number(q.used)>0).length,headN=usedN?Math.min(3,usedN):3;
   for(const [label,value] of [['调度占用',s.active??0],['模型',s.quota?quotas.length:'—'],['待核实执行',pending]]){const metric=el('div');metric.append(el('span',label),el('strong',value));metrics.append(metric);}box.append(metrics);
   const alerts=[];
   if(s.healthCheck?.error)alerts.push('健康检查失败 '+(s.healthCheck.failureCount||1)+' 次');
@@ -190,7 +194,7 @@ function render(d){
   if(!s.quota)box.append(el('div','额度状态暂不可用','worker-empty warn'));
   else if(!quotas.length)box.append(el('div','尚未配置模型额度','worker-empty muted'));
   const quotaList=el('div',undefined,'worker-quota-list');let extra=null;
-  if(quotas.length>3){extra=el('details',undefined,'worker-quota-more');extra.dataset.slot=slot;extra.open=expanded.has(slot);extra.append(el('summary','查看其余 '+(quotas.length-3)+' 个模型'));}
+  if(quotas.length>headN){extra=el('details',undefined,'worker-quota-more');extra.dataset.slot=slot;extra.open=expanded.has(slot);extra.append(el('summary','其余 '+(quotas.length-headN)+' 个模型'));}
   quotas.forEach((item,index)=>{
    const fraction=quotaFraction(item),q=el('div',undefined,'quota worker-model-quota '+quotaTone(fraction)),line=el('div',undefined,'quota-label');
    line.append(el('span',item.model),el('span',item.legacyBlocked?'待核实':fraction===null?'未知':Math.max(0,item.limit-item.used)+' / '+item.limit));q.append(line);
@@ -198,7 +202,7 @@ function render(d){
    if(item.legacyBlocked)q.append(el('small','暂停使用至 '+date(item.legacyUntil),'warn'));
    else if(item.cooldownUntil>Date.now())q.append(el('small','冷却至 '+date(item.cooldownUntil),'warn'));
    else q.append(el('small',item.windowEnd?'窗口结束 '+date(item.windowEnd):'窗口未启用','muted'));
-   if(index<3)quotaList.append(q);else extra.append(q);
+   if(index<headN)quotaList.append(q);else extra.append(q);
   });box.append(quotaList);if(extra)box.append(extra);
      const ops=el('div',undefined,'worker-actions');for(const [label,kind,cls] of [['切换账号','rotate','primary'],['重启','restart','']]){const b=el('button',label,cls);b.type='button';b.dataset.workerAction=kind;b.dataset.slot=slot;b.disabled=mutating||!fresh;b.addEventListener('click',()=>{$('slot').value=slot;$(kind).click();});ops.append(b);}box.append(ops);
   const foot=el('div',undefined,'worker-foot');foot.append(el('span','账号 #'+(s.account??'—')),el('span','最近检查 '+cookieStamp(s.healthCheck?.checkedAt)));box.append(foot);workers.append(box);
