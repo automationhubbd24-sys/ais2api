@@ -11,6 +11,13 @@ class DispatchCore {
  checkpoint(){
   try{this.persist(this);}catch(e){this.halted=true;throw e;}
  }
+ // A halt only means memory may be ahead of disk. Once a full checkpoint lands
+ // again, disk matches memory and admission can resume without a restart.
+ tryResume(){
+  if(!this.halted)return false;
+  this.halted=false;
+  try{this.persist(this);return true;}catch{this.halted=true;return false;}
+ }
  update(slot,status){
   const s=this.slots.get(slot),owner=this.pool.slots.get(slot);
   if(s===undefined)throw Error('Unknown slot');

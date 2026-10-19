@@ -14,7 +14,10 @@ function normalize(model) {
   if (!Array.isArray(methods) || methods.some(x => typeof x !== 'string')) {
     throw Error('Missing model capabilities');
   }
-  return {id, methods:[...new Set(methods)].sort()};
+  const out = {id, methods:[...new Set(methods)].sort()};
+  // Upstream's own per-model output cap; used to pin maxOutputTokens.
+  if (Number.isSafeInteger(model.outputTokenLimit) && model.outputTokenLimit > 0) out.outputTokenLimit = model.outputTokenLimit;
+  return out;
 }
 // fetchPage is an authenticated transport adapter, NOT arbitrary client input.
 // It must return a decoded Google ListModels page and obey AbortSignal.

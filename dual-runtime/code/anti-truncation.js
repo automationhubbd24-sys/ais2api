@@ -4,6 +4,8 @@
 const AT_PREFIX = "anti-truncation/";
 const AT_TOOL_NAME = "emit_answer";
 const AT_MAX_ATTEMPTS = 3;
+// After this much time since the request arrived, an unfinished round fails instead of continuing.
+const AT_CONTINUE_DEADLINE_MS = 360000;
 const AT_SYSTEM_HINT =
   "\n\n[SYSTEM CONSTRAINT] You have a tool named emit_answer. " +
   "When you are ready to output your final complete answer, you MUST call " +
@@ -77,7 +79,45 @@ function atBuildContinuationBody(googleBody, googleResponse, prevAnswer) {
   const body = Object.assign({}, googleBody, { contents: newContents });
   return body;
 }
+// Upstream content-safety refusals. Retrying the same request may succeed
+// (these are sometimes false positives), but continuing the conversation never helps.
+const AT_BLOCK_REASONS = /^(SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY|OTHER_SAFETY)$/;
+function atBlockInfo(googleResponse) {
+  if (!googleResponse || typeof googleResponse !== 'object') return null;
+  const candidate = Array.isArray(googleResponse.candidates) ? googleResponse.candidates[0] : null;
+  const finish = candidate && typeof candidate.finishReason === 'string' ? candidate.finishReason : null;
+  const promptBlock = googleResponse.promptFeedback && typeof googleResponse.promptFeedback.blockReason === 'string'
+    ? googleResponse.promptFeedback.blockReason : null;
+  let reason = null, stage = null;
+  if (promptBlock && /^[A-Z_]{1,40}$/.test(promptBlock) && promptBlock !== 'BLOCK_REASON_UNSPECIFIED') { reason = promptBlock; stage = 'prompt'; }
+  else if (finish && AT_BLOCK_REASONS.test(finish)) { reason = finish; stage = 'response'; }
+  if (!reason) return null;
+  const u = googleResponse.usageMetadata;
+  const promptTokens = u && Number.isSafeInteger(u.promptTokenCount) && u.promptTokenCount >= 0 ? u.promptTokenCount : null;
+  return { reason, stage, promptTokens };
+}
+function atBlockMessage(info) {
+  return '上游内容安全拦截（' + info.reason + '）：模型拒绝生成，本次没有输出。' +
+    '这类拦截有时是误判，可以直接重试；多次被拦请调整内容。';
+}
+// Upstream ended the generation early (finish=OTHER etc.) without emit_answer. Nothing is returned
+// to the client; the error carries the finish reason and token counts so the request record shows why.
+function atFinishPayload(info, httpStatus) {
+  const payload = info.timeLimit
+    ? { error: { code: httpStatus, type: 'upstream_incomplete', status: 'AT_TIME_LIMIT',
+      message: '已用时约 ' + Math.round(info.elapsedMs / 60000) + ' 分钟仍未得到完整答案（finish=' + info.reason + '），超过 6 分钟不再续写，直接返回失败。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } }
+    : { error: { code: httpStatus, type: 'upstream_incomplete', status: 'FINISH_' + info.reason,
+    message: '上游中途结束（finish=' + info.reason + '），未返回内容。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } };
+  if (info.promptTokens !== null || info.outputTokens !== null) payload.usage = { prompt_tokens: info.promptTokens, completion_tokens: info.outputTokens };
+  return payload;
+}
+function atBlockPayload(info, httpStatus) {
+  const payload = { error: { code: httpStatus, type: 'content_blocked', status: info.reason, message: atBlockMessage(info), block_stage: info.stage } };
+  if (info.promptTokens !== null) payload.usage = { prompt_tokens: info.promptTokens };
+  return payload;
+}
 module.exports = {
-  AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS,
+  AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, AT_CONTINUE_DEADLINE_MS,
   atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody,
+  atBlockInfo, atBlockMessage, atBlockPayload, atFinishPayload,
 };

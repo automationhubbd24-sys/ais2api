@@ -42,20 +42,28 @@
   const box=byId('usage-counts');if(!box)return;
   try{const d=await read('/api/usage-counts',control);box.replaceChildren();
    if(!d.items.length){box.append(node('p','近 30 天没有请求记录','muted'));return;}
+   const groups=new Map();for(const i of d.items){const k=String(i.account??'—');if(!groups.has(k))groups.set(k,[]);groups.get(k).push(i);}
+   const sum=l=>l.reduce((n,i)=>n+(i.month?.requests||0),0);
+   const ordered=[...groups.entries()].sort((x,y)=>sum(y[1])-sum(x[1]));
    const table=node('table',undefined,'count-table'),head=node('tr');
-   for(const h of ['账号','模型','今天','近 7 天','近 30 天','429 次数','最近 429'])head.append(node('th',h));
+   for(const h of ['账号','模型','今天','7 天','30 天','成功率','429'])head.append(node('th',h));
    const thead=node('thead');thead.append(head);table.append(thead);const body=node('tbody');
-   for(const i of d.items){const tr=node('tr');
-    const who=node('td');who.append(node('span','#'+(i.account??'—')));if(i.tier==='ultra'||i.tier==='ultra20')who.append(node('span',(i.tier==='ultra20'?'Ultra 20x':'Ultra 5x'),'badge ultra-badge'));else if(i.tier==='pro')who.append(node('span','Pro','badge pro-badge'));tr.append(who);
-    tr.append(node('td',i.model));
-    for(const k of ['today','week','month']){const c=i[k],td=node('td');td.append(node('strong',fmt(c.requests)));td.append(node('small',' 成功 '+fmt(c.success),'muted'));tr.append(td);}
-    tr.append(node('td',fmt(i.today.rateLimited)+' / '+fmt(i.week.rateLimited)+' / '+fmt(i.month.rateLimited)));
-    tr.append(node('td',i.last429At?time(i.last429At):'—'));body.append(tr);}
+   const num=v=>{const td=node('td',v?fmt(v):'·','num');if(!v)td.classList.add('zero');return td;};
+   const LIMIT=8;let shown=0,hidden=0;
+   for(const [acc,list] of ordered){list.sort((x,y)=>(y.month?.requests||0)-(x.month?.requests||0));
+    list.forEach((i,n)=>{const tr=node('tr');if(n===0)tr.className='grp';
+     const who=node('td',undefined,'who');if(n===0){who.append(node('span','#'+acc));if(i.tier==='ultra'||i.tier==='ultra20')who.append(node('span',i.tier==='ultra20'?'U20':'U5','badge ultra-badge'));else if(i.tier==='pro')who.append(node('span','Pro','badge pro-badge'));}
+     tr.append(who,node('td',i.model,'mdl'));
+     tr.append(num(i.today.requests),num(i.week.requests),num(i.month.requests));
+     const m=i.month||{},rate=m.requests?Math.round(m.success/m.requests*100):null,rt=node('td',rate==null?'·':rate+'%','num');if(rate!=null&&rate<80)rt.classList.add('low');if(rate==null)rt.classList.add('zero');tr.append(rt);
+     const r=m.rateLimited||0,rl=node('td',r?fmt(r):'·','num');if(r){rl.classList.add('warn429');rl.title='今天 '+fmt(i.today.rateLimited)+' · 7 天 '+fmt(i.week.rateLimited)+' · 30 天 '+fmt(r)+(i.last429At?' · 最近 '+time(i.last429At):'');}else rl.classList.add('zero');tr.append(rl);
+     if(shown>=LIMIT){tr.hidden=true;tr.classList.add('extra');hidden++;}else shown++;
+     body.append(tr);});}
    table.append(body);const wrap=node('div',undefined,'count-table-wrap');wrap.append(table);box.append(wrap);
-   box.append(node('p','按北京时间统计。今天从 0 点算起，近 7 天、近 30 天包含今天；429 列依次为今天 / 近 7 天 / 近 30 天。','muted'));
+   if(hidden){const more=node('button','显示全部（还有 '+hidden+' 行）','count-more');more.type='button';more.onclick=()=>{const open=more.dataset.open!=='1';body.querySelectorAll('tr.extra').forEach(t=>t.hidden=!open);more.dataset.open=open?'1':'';more.textContent=open?'收起':'显示全部（还有 '+hidden+' 行）';};box.append(more);}
   }catch(e){if(e.name!=='AbortError'){box.replaceChildren(node('p','请求次数读取失败：'+e.message,'warn'));}}
  }
- function recordingWarning(d){const h=d.recording?.history||d.health;return h?.degraded||h?.ready===false||(d.recording?.beginFailures||0)+(d.recording?.finishFailures||0)?' · 统计可能不完整':'';}
+ function recordingWarning(d){const h=d.recording?.history||d.health;return h?.degraded||h?.ready===false||(d.recording?.beginFailures||0)+(d.recording?.finishFailures||0)?' · 统计可能不完整':d.recording?.usageMissing>0?' · 自上次重启有 '+d.recording.usageMissing+' 次成功请求未拿到用量（累计 '+(d.recording.usageMissingTotal||d.recording.usageMissing)+' 次，最近：'+(d.recording.lastUsageMissing?.model||'未知')+'）':d.recording?.usageMissingTotal>0&&d.recording.lastUsageMissing?.at>Date.now()-86400000?' · 24 小时内有成功请求未拿到用量（累计 '+d.recording.usageMissingTotal+' 次，最近：'+(d.recording.lastUsageMissing?.model||'未知')+'）':'';}
  function card(title,value,note,kind){const e=node('article',undefined,'card stat stat-'+kind),head=node('div',undefined,'stat-heading'),mark=node('span',undefined,'stat-mark');mark.append(icon(kind));head.append(node('span',title),mark);e.append(head,node('strong',value),node('small',note));return e;}
  function rangeQuery(){const choice=byId('usage-range').value,params=new URLSearchParams();if(choice!=='all'){let from;if(choice==='today'){const d=new Date();d.setHours(0,0,0,0);from=d.getTime();}else from=Date.now()-Number(choice)*86400000;params.set('from',String(from));}return params.toString();}
  function panelHeader(title,description,name){const h=node('div',undefined,'insight-header'),mark=node('span',undefined,'insight-icon'),label=node('div',undefined,'insight-title');mark.append(icon(name));label.append(node('h2',title),node('p',description));h.append(mark,label);return h;}
@@ -109,7 +117,7 @@
   status.append(node('span',Number.isFinite(r.httpStatus)?r.httpStatus:outcomeLabel,'badge '+statusKind));status.title=outcomeLabel;model.append(node('strong',r.requestedModel||r.model||'模型未知','request-model'));
   account.append(node('span','账号 #'+(r.account??'未知')),node('small','实例 '+(r.slot||'未知')));type.append(node('span',r.stream?'stream':'同步','badge stream-badge'));grid.append(status,model,account,type);
   const tokens=pair(grid,'TOKEN  输入 / 输出',compact(u?.input)+' / '+compact(u?.output),'metric-token');tokens.title='输入 '+fmt(u?.input)+' / 输出 '+fmt(u?.output);
-  pair(grid,'缓存 / 思考',compact(u?.cached)+' / '+compact(u?.reasoning),'metric-cache');
+  pair(grid,'思考',compact(u?.reasoning),'metric-cache');
   pair(grid,'首内容 / 总耗时',seconds(r.metrics?.firstContentMs)+' / '+seconds(r.metrics?.durationMs),'metric-duration');
   pair(grid,'估算费用',money(r.cost?.amount),'metric-price');
   const when=node('time',time(r.createdAt),'request-time'),created=new Date(r.createdAt);if(Number.isFinite(r.createdAt)&&Number.isFinite(created.getTime()))when.dateTime=created.toISOString();grid.append(when);
@@ -118,10 +126,11 @@
   if(endedBeforeClose)body.append(node('p','已收到结束标记，连接未正常关闭','warn'));
   if(!Number.isFinite(r.cost?.amount))body.append(node('p','尚未计价：'+(r.cost?.reason||'未记录结束'),'muted'));
   if(r.outcome==='pending')body.append(node('p','可能仍在执行','warn'));
-  const exact=node('div',undefined,'exact-metrics');for(const [title,value] of [['输入 Token',u?.input],['输出 Token',u?.output],['缓存 Token',u?.cached],['思考 Token',u?.reasoning]])pair(exact,title,fmt(value));body.append(exact);
+  const ek=r.metrics?.errorKind;if(ek){const blocked=/^(SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY|OTHER_SAFETY)$/.test(ek);const early=/^FINISH_/.test(ek);body.append(node('p',early?'上游中途结束：'+ek.slice(7)+'（未返回内容，可重试）':ek==='stale_pending'?'超时未收到结果，已自动结束':(blocked?'上游内容安全拦截：':'错误类型：')+ek+(blocked?'（模型拒绝生成，可重试或调整内容）':''),blocked||early?'warn':'muted'));}
+  const exact=node('div',undefined,'exact-metrics');for(const [title,value] of [['输入 Token',u?.input],['输出 Token',u?.output],['思考 Token',u?.reasoning]])pair(exact,title,fmt(value));body.append(exact);
   body.append(node('code',r.id,'request-id'));detail.append(body);box.append(detail);return box;
  }
- function tableHead(){const head=node('div',undefined,'request-table-head');head.setAttribute('aria-hidden','true');for(const title of ['状态','模型','账号','类型','TOKEN','缓存 / 思考','首内容 / 总耗时','估算费用','时间',''])head.append(node('span',title));return head;}
+ function tableHead(){const head=node('div',undefined,'request-table-head');head.setAttribute('aria-hidden','true');for(const title of ['状态','模型','账号','类型','TOKEN','思考','首内容 / 总耗时','估算费用','时间',''])head.append(node('span',title));return head;}
  function pager(){byId('history-prev').disabled=historyBusy||page<=1;byId('history-next').disabled=historyBusy||page*20>=total;byId('history-page').textContent='第 '+page+' / '+Math.max(1,Math.ceil(total/20))+' 页 · 共 '+total+' 条';}
  async function loadHistory(){
   historyController?.abort();const control=new AbortController();historyController=control;historyBusy=true;pager();byId('history-refresh').disabled=true;byId('history-list').setAttribute('aria-busy','true');
@@ -145,12 +154,14 @@
   const models=Object.values(a.quota.models||{});if(!models.length){box.append(node('div','尚未配置模型额度策略','empty'));return;}
   const heading=node('div',undefined,'quota-section-heading');heading.append(node('h3','模型额度'),node('span',models.length+' 个模型','badge'));box.append(heading);
   const list=node('div',undefined,'quota-model-list');
+  models.sort((x,y)=>(Number(y.used)||0)-(Number(x.used)||0));const idleCount=models.filter(q=>!(Number(q.used)>0)).length,anyUsed=idleCount<models.length;
   for(const q of models){
    const row=node('div',undefined,'quota'),line=node('div',undefined,'quota-label'),unlimited=q.limit===null&&Number.isFinite(q.used),valid=Number.isFinite(q.used)&&Number.isFinite(q.limit)&&q.limit>0,remaining=valid?Math.max(0,q.limit-q.used):undefined,percent=valid?remaining/q.limit*100:undefined;
    const name=node('div',undefined,'quota-model-name');name.append(node('strong',q.model),node('small',q.legacyBlocked?'历史记录待核实':unlimited?'已记录 '+fmt(q.used)+' 次 · 不设上限，直到 429':valid?'已记录 '+fmt(q.used)+' 次 / 上限 '+fmt(q.limit)+' 次':'额度信息未提供'));
    const state=node('div',undefined,'quota-model-state'),reset=q.legacyBlocked?'历史窗口截止 '+time(q.legacyUntil):q.cooldownUntil>Date.now()?'冷却至 '+time(q.cooldownUntil):q.windowEnd?'窗口结束 '+time(q.windowEnd):'额度窗口尚未启用';state.append(node('small',reset,q.cooldownUntil>Date.now()?'warn':''),node('strong',q.legacyBlocked?'待核实':unlimited?'不限':valid?fmt(percent)+'%':'未知',q.legacyBlocked?'warn':''));line.append(name,state);row.append(line);
-   if(valid&&!q.legacyBlocked){const bar=node('progress');bar.max=q.limit;bar.value=remaining;bar.setAttribute('aria-label',q.model+' 剩余次数 '+remaining);if(percent<=20)bar.className='quota-low';row.append(bar);}list.append(row);
+   if(valid&&!q.legacyBlocked){const bar=node('progress');bar.max=q.limit;bar.value=remaining;bar.setAttribute('aria-label',q.model+' 剩余次数 '+remaining);if(percent<=20)bar.className='quota-low';row.append(bar);}if(anyUsed&&!(Number(q.used)>0)){row.hidden=true;row.classList.add('idle');}list.append(row);
   }box.append(list);
+  if(anyUsed&&idleCount){const more=node('button','显示未使用模型（'+idleCount+'）','count-more');more.type='button';more.onclick=()=>{const open=more.dataset.open!=='1';list.querySelectorAll('.quota.idle').forEach(r=>r.hidden=!open);more.dataset.open=open?'1':'';more.textContent=open?'收起未使用':'显示未使用模型（'+idleCount+'）';};box.append(more);}
  }
  function pageChanged(){if(location.hash==='#usage')loadUsage();if(location.hash==='#history')loadHistory();}
  byId('usage-refresh').addEventListener('click',loadUsage);byId('usage-range').addEventListener('change',loadUsage);byId('history-refresh').addEventListener('click',loadHistory);

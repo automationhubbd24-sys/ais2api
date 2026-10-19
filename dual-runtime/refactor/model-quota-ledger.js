@@ -1,5 +1,8 @@
  'use strict';
 const WINDOW=86400000;
+// Google resets AI Studio quotas daily at 15:00 Beijing time (07:00 UTC), not 24h after first use.
+const RESET_OFFSET=7*3600000;
+const periodStart=t=>Math.floor((t-RESET_OFFSET)/WINDOW)*WINDOW+RESET_OFFSET;
 const LIMITS=Object.freeze({flash:100,pro:10,ultra:10});
 // Daily caps per account class. 'ultra' family = premium models (gemini-4-argon).
 const TIER_LIMITS=Object.freeze({
@@ -48,7 +51,7 @@ class ModelQuotaLedger{
   if(!own(this.data.accounts,key)&&create)this.data.accounts[key]={windowStart:0,models:{},legacy:null};
   return own(this.data.accounts,key)?this.data.accounts[key]:undefined;
  }
- windowActive(a,now){return !!a&&a.windowStart>0&&now-a.windowStart<WINDOW;}
+ windowActive(a,now){return !!a&&a.windowStart>0&&a.windowStart<=now&&a.windowStart>=periodStart(now);}
  view(id,model,family,now=this.clock()){
   modelKey(model);familyKey(family);
   const a=this.account(id),q=a&&own(a.models,model)?a.models[model]:undefined;
@@ -56,7 +59,7 @@ class ModelQuotaLedger{
   const legacyBlocked=!!a?.legacy&&now<a.legacy.until&&a.legacy.blockedFamilies.includes(family);
   const cooldownUntil=q?.cooldownUntil||0,limit=this.limitFor(id,family);
   return {model,family,limit,unlimited:limit===null,used,remaining:limit===null?null:Math.max(0,limit-used),
-   windowStart:active?a.windowStart:0,windowEnd:active?a.windowStart+WINDOW:0,
+   windowStart:active?a.windowStart:0,windowEnd:active?periodStart(a.windowStart)+WINDOW:0,
    cooldownUntil,legacyBlocked,legacyUntil:legacyBlocked?a.legacy.until:0,
    allowed:!legacyBlocked&&cooldownUntil<=now&&(limit===null||used<limit)};
  }
@@ -97,4 +100,4 @@ class ModelQuotaLedger{
  }
  snapshot(){return structuredClone(this.data);}
 }
-module.exports={ModelQuotaLedger,LIMITS,TIER_LIMITS,WINDOW,validate};
+module.exports={ModelQuotaLedger,LIMITS,TIER_LIMITS,WINDOW,RESET_OFFSET,periodStart,validate};

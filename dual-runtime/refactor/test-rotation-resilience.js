@@ -44,11 +44,16 @@ test('a hung rotation in A does not stop B from switching independently',async()
  fake.stop=slot=>slot==='A'?gate:Promise.resolve();
  const a=r.rotate('A',true,3);
  assert.equal(d.operations.has('A'),true);
- const b=await r.rotate('B',true,4);
- assert.equal(b.account,4);assert.equal(d.pool.slots.get('B').current,4);
+ // Rotations are globally serialized: B waits while A is still running.
+ await assert.rejects(r.rotate('B',true,4),/Waiting for previous rotation result/);
+ assert.equal(d.pool.slots.get('B').current,2);
  assert.equal(d.pool.slots.get('A').pending.id,3);
  release();await a;assert.equal(d.pool.slots.get('A').current,3);
  assert.equal(r.running.size,0);
+ // A finished and released its lock; once the global interval passes B switches on its own.
+ d.rotationThrottle.lastAt=Date.now()-300001;
+ const b=await r.rotate('B',true,4);
+ assert.equal(b.account,4);assert.equal(d.pool.slots.get('B').current,4);
 });
 test('uncertain stop retains both account reservations but only blocks its slot',async()=>{
  const d=fixture(),fake=driver(),r=new RotationController(d,fake);
@@ -57,7 +62,11 @@ test('uncertain stop retains both account reservations but only blocks its slot'
  assert.equal(d.pool.owners.get(1),'A');assert.equal(d.pool.owners.get(3),'A');
  assert.equal(r.failures.get('A').retryable,true);
  assert.equal(await r.reconcile('A'),false);
+ // A's lock blocks B only until it expires (10 minutes), not forever.
+ await assert.rejects(r.rotate('B',true,4),/Waiting for previous rotation result/);
+ d.rotationThrottle.claimedAt=d.rotationThrottle.lastAt=Date.now()-600001;
  assert.equal((await r.rotate('B',true,4)).account,4);
+ assert.equal(d.pool.owners.get(1),'A');assert.equal(d.pool.owners.get(3),'A');
 });
 test('target readiness timeout is safely reconciled without repeating lifecycle commands',async()=>{
  const d=fixture(),fake=driver(),r=new RotationController(d,fake);

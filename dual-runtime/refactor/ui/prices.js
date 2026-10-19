@@ -1,13 +1,14 @@
 'use strict';
 (()=>{
  const $=id=>document.getElementById(id);
- const fields={inputPerMillion:'price-input',outputPerMillion:'price-output',cachedPerMillion:'price-cached',reasoningPerMillion:'price-reasoning'};
+ const fields={inputPerMillion:'price-input',outputPerMillion:'price-output',reasoningPerMillion:'price-reasoning'};
  let snapshot,reading=false,saving=false,valid=false;
  const message=text=>{$('price-message').textContent=text;};
  function controls(){
   $('price-save').disabled=!valid||reading||saving||snapshot?.blocked||!$('price-model').value;
   $('price-read').disabled=reading||saving;
-  for(const e of $('price-form').elements)if(e.id!=='price-save')e.disabled=reading||saving;
+  $('price-clear-scheduled').disabled=reading||saving||snapshot?.blocked||!snapshot?.scheduled?.[$('price-model').value]?.length;
+  for(const e of $('price-form').elements)if(e.id!=='price-save'&&e.id!=='price-clear-scheduled')e.disabled=reading||saving;
  }
  async function call(body){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
@@ -25,13 +26,19 @@
  function fill(){
   const price=snapshot?.prices?.[$('price-model').value];
   for(const [key,id] of Object.entries(fields))$(id).value=Number.isFinite(price?.[key])?String(price[key]):'';
-  $('price-reasoning-mode').value=price?.reasoningMode||'unknown';controls();
+  $('price-reasoning-mode').value=price?.reasoningMode||'unknown';
+  const fmt=ms=>new Date(ms).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
+  const rate=v=>Number.isFinite(v)?'$'+v:'未知';
+  const list=snapshot?.scheduled?.[$('price-model').value]||[];
+  $('price-scheduled').textContent=list.length?'计划调价：'+list.map(e=>fmt(e.effectiveAt)+' 起 输入 '+rate(e.price.inputPerMillion)+' / 输出 '+rate(e.price.outputPerMillion)+' / 思考 '+rate(e.price.reasoningPerMillion)).join('；'):'';
+  controls();
  }
  function render(data){
   snapshot=data;
   const selected=$('price-model').value;
-  $('price-model').replaceChildren(new Option('请选择原模型',''));
-  for(const model of data.models)$('price-model').add(new Option(model,model));
+  $('price-model').replaceChildren(new Option('请选择模型',''));
+  const w=typeof window==='object'?window:null;if(w?.aisModelUsage?.size&&w.aisOrderModelSelect)w.aisOrderModelSelect($('price-model'),data.models);
+  else for(const model of data.models)$('price-model').add(new Option(model,model));
   if(data.models.includes(selected))$('price-model').value=selected;
   valid=!data.blocked;fill();
  }
@@ -47,7 +54,7 @@
  $('price-form').addEventListener('submit',async event=>{
   event.preventDefault();
   if(!valid||reading||saving||!$('price-model').value)return;
-  const price={currency:'USD',reasoningMode:$('price-reasoning-mode').value};
+  const price={currency:'USD',reasoningMode:$('price-reasoning-mode').value,cachedPerMillion:null};
   for(const [key,id] of Object.entries(fields)){
    const text=$(id).value.trim();
    price[key]=text===''?null:Number(text);
@@ -55,16 +62,33 @@
     message('单价必须为非负有限数值，或留空表示未知');return;
    }
   }
-  if(!confirm('保存 '+$('price-model').value+' 的单价？'))return;
   const body={model:$('price-model').value,revision:snapshot.revision,price};
+  const eff=$('price-effective').value;
+  if(eff){
+   // datetime-local has no zone: interpret as Beijing time (UTC+8).
+   const m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(eff);
+   const at=m?Date.UTC(+m[1],m[2]-1,+m[3],m[4]-8,+m[5]):NaN;
+   if(!Number.isFinite(at)||at<=Date.now()){message('生效时间必须是将来的时间');return;}
+   body.effectiveAt=at;
+  }
+  if(!confirm(body.effectiveAt?'为 '+body.model+' 计划在 '+$('price-effective').value.replace('T',' ')+'（北京时间）起使用新单价？':'保存 '+body.model+' 的单价？'))return;
   saving=true;controls();
-  try{render(await call(body));message('已保存');}
+  try{render(await call(body));$('price-effective').value='';message(body.effectiveAt?'已计划调价':'已保存');}
   catch(e){valid=false;message('保存未完成或未确认：'+e.message+'。请点击重新读取。');}
+  finally{saving=false;controls();}
+ });
+ $('price-clear-scheduled').addEventListener('click',async()=>{
+  const model=$('price-model').value;
+  if(!model||saving||reading||!confirm('取消 '+model+' 尚未生效的计划调价？'))return;
+  saving=true;controls();
+  try{render(await call({model,revision:snapshot.revision,clearScheduled:true}));message('已取消计划调价');}
+  catch(e){valid=false;message('取消未完成或未确认：'+e.message+'。请点击重新读取。');}
   finally{saving=false;controls();}
  });
  $('price-model').addEventListener('change',fill);
  $('price-read').addEventListener('click',load);
- addEventListener('hashchange',()=>{if(location.hash==='#settings'&&!snapshot)load();});
- if(location.hash==='#settings')load();
+ if(typeof document.addEventListener==='function')document.addEventListener('ais-model-usage',()=>{if(snapshot)render(snapshot);});
+ addEventListener('hashchange',()=>{if(location.hash==='#models'&&!snapshot)load();});
+ if(location.hash==='#models')load();
  controls();
 })();

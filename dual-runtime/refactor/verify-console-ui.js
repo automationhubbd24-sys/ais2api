@@ -3,6 +3,7 @@
 // No credentials or upstream generation requests are used; non-fixture network access is blocked.
 // Run: node dual-runtime/refactor/verify-console-ui.js
 // Optional: AIS_BROWSER_EXECUTABLE=/path/to/chromium AIS_UI_SCREENSHOTS=/tmp/ais-console-preview
+// Firefox/Camoufox: AIS_BROWSER_ENGINE=firefox AIS_BROWSER_EXECUTABLE=/app/camoufox-linux/camoufox
 const {chromium}=require('playwright');const http=require('http'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
 const {ModelQuotaLedger}=require('./model-quota-ledger'),{RequestHistory}=require('./request-history');
 const {assets}=require('./console-routes');
@@ -22,7 +23,7 @@ const quota=i=>{
  }
  return ledger.summary(i+1,policies);
 };
-const accounts=Array.from({length:28},(_,i)=>({id:i+1,name:(names[i%names.length])+' '+(i+1),owner:i===0?'A':i===1?'B':null,cooldownUntil:i===3||i===5?now+60000:0,quota:quota(i)}));
+const accounts=Array.from({length:28},(_,i)=>({id:i+1,name:(names[i%names.length])+' '+(i+1),owner:i===0?'A':i===1?'B':null,cooldownUntil:i===3||i===5?now+3600000:0,quota:quota(i)}));
 const slots=Object.fromEntries(['A','B'].map((slot,i)=>[slot,{ready:true,active:i,account:i+1,quota:quota(i),workerEpoch:'epoch-'+slot,workerHealth:{account:i+1,workerEpoch:'epoch-'+slot,observedAt:now,pendingCompletions:0}}]));
 const cleanupStatus=new (require('./retired-resource-cleanup').RetiredResourceCleanup)({dispatch:{},driver:{root:'/unused'},root:'/unused'}).status();
 const status={halted:false,queue:2,accounts,slots,retiredCleanup:cleanupStatus};
@@ -34,6 +35,7 @@ const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://local');const send=(data,code=200,delay=0)=>setTimeout(()=>{if(!res.destroyed){res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(data));}},delay);
  if(url.pathname==='/api/status')return send(statusFailure?{error:'fixture offline'}:status,statusFailure?503:200);
  if(url.pathname==='/api/sync-accounts'){if(failAfterSync)statusFailure=true;return send(syncFailure?{error:'sync outcome unavailable'}:{added:[29]},syncFailure?503:200);}
+ if(url.pathname==='/api/auth')return send({passwordSet:false,passwordUpdatedAt:null,internalExternal:true,internalMasked:'intern…1234',keys:[]});
  if(url.pathname==='/api/models')return send(catalog);
  if(url.pathname==='/api/models/refresh'){catalogSyncs++;return send({accepted:true});}
  if(url.pathname==='/api/prices'){
@@ -58,7 +60,8 @@ const server=http.createServer((req,res)=>{
  }
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const address='http://127.0.0.1:'+server.address().port;
  let browser;
- try{browser=await chromium.launch({headless:true,...(process.env.AIS_BROWSER_EXECUTABLE?{executablePath:process.env.AIS_BROWSER_EXECUTABLE}:{}),args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});}
+ const firefox=process.env.AIS_BROWSER_ENGINE==='firefox',engine=firefox?require('playwright').firefox:chromium;
+  try{browser=await engine.launch({headless:true,...(process.env.AIS_BROWSER_EXECUTABLE?{executablePath:process.env.AIS_BROWSER_EXECUTABLE}:{}),...(firefox?{}:{args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']})});}
  catch(error){server.close();throw Error('无法启动 Chromium。请安装 Playwright 浏览器，或设置 AIS_BROWSER_EXECUTABLE 指向本地 Chromium。'+error.message);}
  try{
   const page=await browser.newPage({viewport:{width:1440,height:1000},deviceScaleFactor:1,colorScheme:'light'});const errors=[],assetErrors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -111,8 +114,8 @@ const server=http.createServer((req,res)=>{
   await page.waitForFunction(()=>document.getElementById('cleanup-status').textContent.includes('退役资源未清理'));
   
   status.retiredCleanup.slots.A.error=null;
-  statusFailure=true;await page.locator('#refresh').click();await page.waitForTimeout(150);assert.equal(await page.locator('body').evaluate(e=>e.classList.contains('stale')),true);assert.equal(await page.locator('#sync').isDisabled(),true);
-  statusFailure=false;await page.locator('#refresh').click();await page.waitForTimeout(150);assert.equal(await page.locator('body').evaluate(e=>e.classList.contains('stale')),false);assert.equal(await page.locator('#notice').isHidden(),true);
+  statusFailure=true;await page.locator('#refresh').click();await page.waitForFunction(()=>document.body.classList.contains('stale'));assert.equal(await page.locator('body').evaluate(e=>e.classList.contains('stale')),true);assert.equal(await page.locator('#sync').isDisabled(),true);
+  statusFailure=false;await page.locator('#refresh').click();await page.waitForFunction(()=>!document.body.classList.contains('stale'));assert.equal(await page.locator('body').evaluate(e=>e.classList.contains('stale')),false);assert.equal(await page.locator('#notice').isHidden(),true);
   await page.locator('.mobile-nav [data-page="accounts"]').click();
   failAfterSync=true;page.once('dialog',dialog=>dialog.accept());await page.locator('#sync').click();await page.waitForFunction(()=>document.getElementById('updated').textContent==='状态已过期');
   assert.match(await page.locator('#notice').textContent(),/状态读取失败/);assert.doesNotMatch(await page.locator('#notice').textContent(),/新增/);assert.equal(await page.locator('#sync').isDisabled(),true);
@@ -123,12 +126,21 @@ const server=http.createServer((req,res)=>{
   realHistory=true;await page.locator('.mobile-nav [data-page="usage"]').click();await page.waitForFunction(()=>document.querySelector('#usage-cards .stat strong')?.textContent==='3');
   assert.equal(await page.locator('#usage-cards .stat-tokens strong').textContent(),'1.5K');assert.equal(await page.locator('.distribution-row').count(),2);assert.match(await page.locator('#usage-models').textContent(),/gemini-real-flash/);
   await go('history');await page.waitForFunction(()=>document.querySelectorAll('.request-card').length===3);assert.match(await page.locator('#history-list').textContent(),/等待完成/);assert.match(await page.locator('#history-list').textContent(),/1K/);assert.match(await page.locator('#history-list').textContent(),/500/);
-  await go('models');await page.locator('#catalog-rows tr').nth(5).waitFor();await page.locator('#catalog-search').fill('3.1-pro');assert.equal(await page.locator('#catalog-rows tr').count(),2);await page.locator('#catalog-search').fill('');
+  realHistory=false;await go('models');await page.locator('#catalog-rows tr').nth(1).waitFor();assert.equal(await page.locator('#catalog-rows tr').count(),2,'unused models hidden');assert.match(await page.locator('#catalog-rows tr').first().textContent(),/gemini-3\.7-flash/,'most used first');await page.locator('#catalog-more').click();assert.equal(await page.locator('#catalog-rows tr').count(),3,'show unused');await page.locator('#catalog-more').click();await page.locator('#catalog-search').fill('3.6');assert.equal(await page.locator('#catalog-rows tr').count(),1,'search finds hidden model');await page.locator('#catalog-search').fill('');
   page.once('dialog',dialog=>dialog.accept());await page.locator('#catalog-workers button').first().click();await page.waitForFunction(()=>!document.getElementById('catalog-read').disabled);assert.equal(catalogSyncs,1);
   await page.screenshot({path:out+'/mobile-models.png',fullPage:true});
-  await go('settings');await page.locator('#price-model option[value="gemini-3.7-flash"]').waitFor({state:'attached'});await page.locator('#price-model').selectOption('gemini-3.7-flash');await page.locator('#price-input').fill('0');await page.locator('#price-output').fill('8');
+  await go('models');await page.locator('#price-model option[value="gemini-3.7-flash"]').waitFor({state:'attached'});await page.locator('#price-model').selectOption('gemini-3.7-flash');await page.locator('#price-input').fill('0');await page.locator('#price-output').fill('8');
   page.once('dialog',dialog=>dialog.accept());await page.locator('#price-save').click();await page.waitForFunction(()=>document.getElementById('price-message').textContent.includes('已保存'));
   assert.equal(prices['gemini-3.7-flash'].inputPerMillion,0);assert.equal(prices['gemini-3.7-flash'].cachedPerMillion,null);await page.screenshot({path:out+'/mobile-settings.png',fullPage:true});
+  await page.setViewportSize({width:1440,height:1000});await page.goto(address+'/#add');await page.locator('#accounts-add').waitFor({state:'visible'});assert.equal(await page.locator('#accounts-list').isHidden(),true);assert.equal(await page.locator('#page-title').textContent(),'添加账号');
+  for(const id of ['raw','le','wlist','script-origin'])assert.equal(await page.locator('#'+id).isVisible(),true,id+' visible on add tab');await page.screenshot({path:out+'/desktop-add.png',fullPage:true});
+  await page.locator('[data-subtab="list"]').click();await page.locator('#accounts-list').waitFor({state:'visible'});assert.equal(await page.locator('#accounts-add').isHidden(),true);
+  await go('overview');await page.locator('[data-worker-action]').first().waitFor();assert.equal(await page.locator('[data-worker-action]').count(),4,'rotate/restart on both worker cards');assert.equal(await page.locator('#instance-ops').isVisible(),true);
+  await go('settings');assert.equal(await page.locator('.settings-group').count(),4);for(const id of ['pw-form','key-form','key-list','mode','taurl','msingle','uon','proxy-forms','pxh','wdom'])assert.equal(await page.locator('#'+id).count(),1,id);await page.screenshot({path:out+'/desktop-settings.png',fullPage:true});
+  await go('models');for(const id of ['policy-model','price-model','catalog-rows'])assert.equal(await page.locator('#'+id).count(),1,id);assert.equal(await page.locator('#price-model').isVisible(),true);await page.screenshot({path:out+'/desktop-models.png',fullPage:true});
+  assert.equal(await page.locator('a[href="/import"]').count(),0,'no links to the old import page');
+  await page.setViewportSize({width:430,height:932});await page.locator('#mobile-more').click();await page.locator('#more-menu [data-page="add"]').click();await page.locator('#accounts-add').waitFor({state:'visible'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'add tab overflow');await page.screenshot({path:out+'/mobile-add.png',fullPage:true});
+  await go('settings');await page.screenshot({path:out+'/mobile-settings-groups.png',fullPage:true});
   for(const width of [360,430,768,1024,1440]){
    await page.setViewportSize({width,height:1000});
    for(const name of ['overview','accounts','usage','history','models','settings']){await go(name);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,name+' overflow at '+width);}

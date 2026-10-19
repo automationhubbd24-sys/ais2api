@@ -1,6 +1,9 @@
 'use strict';
 
 const DAY = 86400000;
+// Daily quotas reset at 15:00 Beijing time (07:00 UTC).
+const RESET_OFFSET = 7 * 3600000;
+function untilNextReset(now) { return Math.floor((now - RESET_OFFSET) / DAY) * DAY + RESET_OFFSET + DAY - now; }
 const REGION = /region not supported|not available in your (?:country|region)|unsupported[_\s-]*(?:country|region|location)|user location is not supported|available-regions/i;
 function isRegionBlock(result) {
   if (result?.status !== 403 && result?.status !== 400) return false;
@@ -43,7 +46,7 @@ function rejectionCooldown(result, now = Date.now()) {
     // Generic RESOURCE_EXHAUSTED can be RPM/TPM. Only explicit daily/balance
     // evidence gets a day-long default; a provider Retry-After takes priority.
     const exhausted = /insufficient[_\s-]*quota|daily[^\n]{0,80}(?:quota|limit)|(?:quota|limit)[^\n]{0,80}daily|per[\s_-]*day|requests?\s*\/\s*day|\brpd\b|额度不足|余额不足|每日|每天/i.test(message);
-    delay = exhausted ? DAY : 60000;
+    delay = exhausted ? untilNextReset(now) : 60000;
   }
   return { scope: 'model', until: now + Math.ceil(Math.max(1000, Math.min(DAY, delay))) };
 }
@@ -55,4 +58,4 @@ function deadline(task, timeoutMs, message) {
   });
 }
 
-module.exports = { rejectionCooldown, deadline, isRegionBlock };
+module.exports = { rejectionCooldown, deadline, isRegionBlock, untilNextReset };

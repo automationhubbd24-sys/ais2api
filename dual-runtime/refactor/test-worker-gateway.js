@@ -4,8 +4,12 @@ const vm = require('vm'), fs = require('fs'), path = require('path');
 
 test('gateway labels only its own authentication denials before reaching generation', () => {
  const middleware = [];
+ const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'wgw-'));
+ fs.mkdirSync(path.join(tmp, 'auth')); fs.writeFileSync(path.join(tmp, 'auth', 'auth-1.json'), '{}');
  const outer = { disable() {}, use(fn) { middleware.push(fn); } };
- const context = { module: { exports: {} }, Buffer,
+ const context = { module: { exports: {} }, Buffer, console, setTimeout, clearTimeout, setInterval, clearInterval, URL,
+  process: { ...process, env: { ...process.env, WORKER_ACCOUNT: '1', WORKER_SLOT: 'A' } },
+  __dirname: tmp, __filename: path.join(tmp, 'worker-http.js'),
   require: name => name === 'express' ? () => outer : require(name) };
  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'worker-http.js'), 'utf8'), context);
  const secret = 'a'.repeat(32);

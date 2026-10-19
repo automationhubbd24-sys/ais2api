@@ -1,6 +1,7 @@
  'use strict';
 const $=id=>document.getElementById(id);
-const titles={overview:'仪表盘',accounts:'账号管理',models:'模型目录',usage:'使用统计',history:'请求记录',settings:'系统运维'};
+const titles={overview:'概览',accounts:'账号',models:'模型',usage:'统计',history:'请求记录',settings:'设置'};
+const pageAlias={add:'accounts'};
 let state=null,reading=false,mutating=false,fresh=false,readTask=null,statusError=false;
 let accountPage=1;
 const accountColumns=['账号','实例','模型额度','状态','Cookie 状态','冷却结束','操作'];
@@ -25,12 +26,15 @@ function setupAccountColumns(){
  accountColumns.forEach((name,index)=>{const label=el('label'),input=el('input');input.type='checkbox';input.checked=!hiddenAccountColumns.has(index);input.disabled=index===0||index===6;
   input.addEventListener('change',()=>{if(input.checked)hiddenAccountColumns.delete(index);else hiddenAccountColumns.add(index);try{localStorage.setItem('ais-account-columns-v2',JSON.stringify([...hiddenAccountColumns]));}catch{}applyAccountColumns();});label.append(input,document.createTextNode(name));options.append(label);});
  details.append(summary,options);toolbar.append(details);applyAccountColumns();
+ {const list=$('accounts-list'),view=el('div',undefined,'view-toggle');let v='cards';try{v=localStorage.getItem('ais-account-view')||'cards';}catch{}
+  const set=k=>{list.classList.toggle('view-cards',k==='cards');for(const b of view.children)b.setAttribute('aria-pressed',String(b.dataset.view===k));try{localStorage.setItem('ais-account-view',k);}catch{}};
+  for(const [k,t] of [['cards','卡片'],['table','列表']]){const b=el('button',t);b.type='button';b.dataset.view=k;b.addEventListener('click',()=>set(k));view.append(b);}toolbar.append(view);set(v);}
  document.addEventListener('click',event=>{if(!details.contains(event.target))details.open=false;});details.addEventListener('keydown',event=>{if(event.key==='Escape'){details.open=false;summary.focus();}});
 }
 function notice(message){$('notice').textContent=message;$('notice').hidden=!message;}
 function date(value){return Number.isFinite(value)&&value>0?new Date(value).toLocaleString('zh-CN',{hour12:false}):'—';}
-function navigate(){const name=location.hash.slice(1);const page=titles[name]?name:'overview';for(const key of Object.keys(titles))$(key).hidden=key!==page;document.querySelectorAll('[data-page]').forEach(a=>{a.classList.toggle('selected',a.dataset.page===page);if(a.dataset.page===page)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});$('page-title').textContent=titles[page];$('refresh').hidden=page==='usage'||page==='history';if(page==='overview')loadOverviewUsage();}
-function controls(){for(const id of ['sync','rotate','restart','save-mode'])$(id).disabled=mutating;}
+function navigate(){const raw=location.hash.slice(1),name=pageAlias[raw]||raw;const page=titles[name]?name:'overview';for(const key of Object.keys(titles))$(key).hidden=key!==page;document.querySelectorAll('[data-page]').forEach(a=>{const on=a.dataset.page===page&&(a.dataset.page!=='add')||a.dataset.page==='add'&&raw==='add';a.classList.toggle('selected',on);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});$('page-title').textContent=raw==='add'?'添加账号':titles[page];$('refresh').hidden=page==='usage'||page==='history';if(page==='overview')loadOverviewUsage();}
+function controls(){for(const id of ['sync','rotate','restart'])$(id).disabled=mutating||!fresh;$('save-mode').disabled=mutating;document.querySelectorAll('[data-worker-action]').forEach(b=>b.disabled=mutating||!fresh);}
 async function api(path,body){
  const c=new AbortController(),timer=setTimeout(()=>c.abort(),body===undefined?25000:65000);
  try{const options={credentials:'same-origin',redirect:'error',signal:c.signal,headers:{Accept:'application/json'}};if(body!==undefined){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
@@ -114,7 +118,7 @@ function renderAccountRows(d=state){
   const row=el('tr'),identity=el('td'),name=el('button',undefined,'account-name account-name-button'),text=el('div',undefined,'account-identity');
   name.type='button';name.setAttribute('aria-label','查看账号 '+a.id+' 的额度详情');name.addEventListener('click',()=>openAccount(a.id));
   const nameLine=el('div',undefined,'account-title-line');nameLine.append(el('strong',a.name||'未命名账号'));if(a.tier==='ultra'||a.tier==='ultra20')nameLine.append(el('span',(a.tier==='ultra20'?'Ultra 20x':'Ultra 5x'),'badge ultra-badge'));else if(a.tier==='pro')nameLine.append(el('span','Pro','badge pro-badge'));
-  text.append(nameLine,el('small','账号 #'+a.id));name.append(el('span',String(a.name||a.id).slice(0,1).toUpperCase(),'avatar'),text);identity.append(name);row.append(identity);
+  text.append(nameLine,el('small','账号 #'+a.id));{const av=el('span',String(a.name||a.id).slice(0,1).toUpperCase(),'avatar');av.dataset.av=String((Math.abs(Number(a.id)||0)%12)+1).padStart(2,'0');name.append(av,text);}identity.append(name);row.append(identity);
   const owner=el('td');owner.append(el('span',a.owner?'实例 '+a.owner:'未分配',a.owner?'instance-chip':'muted'));row.append(owner);
   const quotaCell=el('td'),quotaBox=el('button',undefined,'account-model-quota'),models=Object.values(a.quota?.models||{}),known=models.map(quotaFraction).filter(value=>value!==null);
   const fraction=known.length?Math.min(...known):null,line=el('div',undefined,'account-quota-line');quotaBox.type='button';quotaBox.title='查看额度';quotaBox.setAttribute('aria-label','查看账号 '+a.id+' 的模型额度');quotaBox.addEventListener('click',()=>openAccount(a.id));quotaBox.classList.add(quotaTone(fraction));
@@ -122,6 +126,7 @@ function renderAccountRows(d=state){
   if(fraction!==null){const bar=el('progress');bar.max=100;bar.value=fraction*100;bar.setAttribute('aria-label','剩余额度 '+Math.round(fraction*100)+'%');quotaBox.append(bar);}
   else quotaBox.append(el('span',undefined,'quota-unknown-track'));
   quotaBox.append(el('small',models.some(q=>q.legacyBlocked)?'含待核实模型':models.some(q=>q.cooldownUntil>Date.now())?'部分模型冷却中':fraction===null?'额度未知':'剩余额度'));
+  {const top=models.filter(q=>Number(q.used)>0).sort((x,y)=>y.used-x.used).slice(0,2);if(top.length){const t=el('span',undefined,'acc-top');for(const q of top)t.append(el('i',String(q.model).replace(/^gemini-/,'')+' · '+q.used));quotaBox.append(t);}}
   quotaCell.append(quotaBox);row.append(quotaCell);
   const statusCell=el('td'),kind=accountState(a);statusCell.append(statusBadge(kind==='invalid'?'登录失效':kind==='cooling'?'冷却中':kind==='assigned'?'已分配':'备用',kind==='invalid'?'warn':kind==='cooling'?'warn':kind==='available'?'good':'assigned'));row.append(statusCell);
   row.append(cookieCell(a));
@@ -159,7 +164,7 @@ function render(d){
  $('service-note').textContent=d.halted?'已暂停':ready+' / 2 实例可调度';
  $('queued').textContent=d.queue;$('account-count').textContent=d.accounts.length;
  $('active').textContent=Object.values(d.slots).reduce((n,s)=>n+(s.active||0),0);
- $('mode-current').textContent=d.streamingMode||'unknown';
+ $('mode-current').textContent=({fake:'假流式',real:'真流式'})[d.streamingMode]||'未知';if(d.streamingMode&&!$('mode').dataset.touched)$('mode').value=d.streamingMode;
  const workers=$('workers'),expanded=new Set([...workers.querySelectorAll('details[open][data-slot]')].map(node=>node.dataset.slot));workers.replaceChildren();
  for(const slot of ['A','B']){
   const s=d.slots[slot];if(!s){workers.append(el('article','实例 '+slot+' 状态缺失','card empty'));continue;}
@@ -172,8 +177,8 @@ function render(d){
   const unhealthy=s.healthCheck?.error||s.legacyUnresolved||s.rotationBlocked||s.recoveryBlocked||(healthFresh&&health.hardQuarantine);
   head.append(identity,statusBadge(label,unhealthy||!s.ready?'warn':s.active?'assigned':'good'));box.append(head);
   const metrics=el('div',undefined,'worker-metrics');
-  const quotas=Object.values(s.quota?.models||{});
-  for(const [label,value] of [['调度占用',s.active??0],['模型',s.quota?quotas.length:'—'],['待核实执行',pending]]){const metric=el('div');metric.append(el('span',label),el('strong',value));metrics.append(metric);}box.append(metrics);
+  const quotas=Object.values(s.quota?.models||{}).sort((x,y)=>(Number(y.used)||0)-(Number(x.used)||0)),usedN=quotas.filter(q=>Number(q.used)>0).length,headN=usedN?Math.min(3,usedN):3;
+  if(s.active||pending){for(const [label,value] of [['调度占用',s.active??0],['待核实执行',pending]]){const metric=el('div');metric.append(el('span',label),el('strong',value));metrics.append(metric);}box.append(metrics);}
   const alerts=[];
   if(s.healthCheck?.error)alerts.push('健康检查失败 '+(s.healthCheck.failureCount||1)+' 次');
   if(s.recoveryBlocked)alerts.push('恢复受阻，请检查实例与登录状态');
@@ -184,22 +189,23 @@ function render(d){
   if(pending)alerts.push(pending+' 个执行等待完成证据，占用已保留');
   if(s.quota?.legacy)alerts.push('历史汇总用量已保留，未归入模型精确计数');
   if(alerts.length){const area=el('div',undefined,'worker-alerts');for(const message of alerts)area.append(el('p',message));box.append(area);}
-   box.append(workerCookie(s,account));
-  const quotaHeader=el('div',undefined,'worker-quota-heading');quotaHeader.append(el('span','模型额度'),el('small','剩余次数'));box.append(quotaHeader);
+   {const f=cookieFacts(account),line=el('div',undefined,'worker-cookie-line');line.append(el('span','Cookie'),el('strong',f.login[0],f.login[1]),el('span','· 到期 '),el('strong',f.expiry[0],f.expiry[1]));line.title='续期：'+f.renew[0];box.append(line);}
+
   if(!s.quota)box.append(el('div','额度状态暂不可用','worker-empty warn'));
   else if(!quotas.length)box.append(el('div','尚未配置模型额度','worker-empty muted'));
   const quotaList=el('div',undefined,'worker-quota-list');let extra=null;
-  if(quotas.length>3){extra=el('details',undefined,'worker-quota-more');extra.dataset.slot=slot;extra.open=expanded.has(slot);extra.append(el('summary','查看其余 '+(quotas.length-3)+' 个模型'));}
+  if(quotas.length>headN){extra=el('details',undefined,'worker-quota-more');extra.dataset.slot=slot;extra.open=expanded.has(slot);extra.append(el('summary','其余 '+(quotas.length-headN)+' 个模型'));}
   quotas.forEach((item,index)=>{
    const fraction=quotaFraction(item),q=el('div',undefined,'quota worker-model-quota '+quotaTone(fraction)),line=el('div',undefined,'quota-label');
    line.append(el('span',item.model),el('span',item.legacyBlocked?'待核实':fraction===null?'未知':Math.max(0,item.limit-item.used)+' / '+item.limit));q.append(line);
    if(fraction!==null){const bar=el('progress');bar.max=100;bar.value=fraction*100;bar.setAttribute('aria-label',item.model+' 剩余额度 '+Math.round(fraction*100)+'%');q.append(bar);}
    if(item.legacyBlocked)q.append(el('small','暂停使用至 '+date(item.legacyUntil),'warn'));
    else if(item.cooldownUntil>Date.now())q.append(el('small','冷却至 '+date(item.cooldownUntil),'warn'));
-   else q.append(el('small',item.windowEnd?'窗口结束 '+date(item.windowEnd):'窗口未启用','muted'));
-   if(index<3)quotaList.append(q);else extra.append(q);
+
+   if(index<headN)quotaList.append(q);else extra.append(q);
   });box.append(quotaList);if(extra)box.append(extra);
-  const foot=el('div',undefined,'worker-foot');foot.append(el('span','账号 #'+(s.account??'—')),el('span','最近检查 '+cookieStamp(s.healthCheck?.checkedAt)));box.append(foot);workers.append(box);
+     const ops=el('div',undefined,'worker-actions');for(const [label,kind,cls] of [['切换账号','rotate','primary'],['重启','restart','']]){const b=el('button',label,cls);b.type='button';b.dataset.workerAction=kind;b.dataset.slot=slot;b.disabled=mutating||!fresh;b.addEventListener('click',()=>{$('slot').value=slot;$(kind).click();});ops.append(b);}box.append(ops);
+  box.title='最近检查 '+cookieStamp(s.healthCheck?.checkedAt);workers.append(box);
  }
  let cleanupNote=$('cleanup-status');
  if(!cleanupNote){cleanupNote=el('p',undefined,'note');cleanupNote.id='cleanup-status';workers.insertAdjacentElement('afterend',cleanupNote);}
@@ -247,7 +253,8 @@ $('restart').addEventListener('click',()=>{
  action('/api/restart',{slot},'重启实例 '+slot+'？'+interruptNote(s),r=>Array.isArray(r.started)&&r.started.includes(slot)?'实例 '+slot+' 正在重启':'重启失败：'+skipText(r));
 });
 $('sync').addEventListener('click',()=>action('/api/sync-accounts',{},'同步账号池？',r=>'新增 '+(Array.isArray(r.added)?r.added.length:'?')+' 个账号'));
-$('save-mode').addEventListener('click',()=>action('/api/set-mode',{mode:$('mode').value},'应用流模式？',r=>['A','B'].map(s=>'实例 '+s+' '+(r.results?.[s]||'未返回结果')).join('\n')));
+$('mode').addEventListener('change',()=>{$('mode').dataset.touched='1';});
+$('save-mode').addEventListener('click',()=>action('/api/set-mode',{mode:$('mode').value},'保存传输方式？重启后也会保持。',r=>['A','B'].map(s=>'实例 '+s+' '+(r.results?.[s]||'未返回结果')).join('\n')));
 $('refresh').addEventListener('click',()=>{refresh();document.dispatchEvent(new Event('ais-refresh'));});
 document.addEventListener('ais-refresh',()=>loadOverviewUsage(true));
 for(const id of ['quota-search','account-status','account-page-size'])$(id).addEventListener(id==='quota-search'?'input':'change',()=>{accountPage=1;renderAccountRows();});

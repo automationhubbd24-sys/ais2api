@@ -8,11 +8,18 @@ function normalizeUsage(payload, provenance = 'response-reported-unverified') {
  const u = native || openai;
  if (!u || typeof u !== 'object' || Array.isArray(u)) return null;
  const input = count(native ? u.promptTokenCount : u.prompt_tokens);
- const output = count(native ? u.candidatesTokenCount : u.completion_tokens);
+ const rawOutput = count(native ? u.candidatesTokenCount : u.completion_tokens);
  const cached = count(native ? u.cachedContentTokenCount : u.prompt_tokens_details?.cached_tokens);
- const reasoning = count(native ? u.thoughtsTokenCount : u.completion_tokens_details?.reasoning_tokens);
+ let reasoning = count(native ? u.thoughtsTokenCount : u.completion_tokens_details?.reasoning_tokens);
  const total = count(native ? u.totalTokenCount : u.total_tokens);
- if ([input,output,cached,reasoning,total].every(v => v === null)) return null;
+ if ([input,rawOutput,cached,reasoning,total].every(v => v === null)) return null;
+ // Gemini omits zero-valued counters: no thoughtsTokenCount means no thinking tokens.
+ if (native && reasoning === null && input !== null) reasoning = 0;
+ let output = rawOutput;
+ if (output === null && input !== null && total !== null) {
+  const derived = total - input - (native ? reasoning : 0);
+  if (derived >= 0) output = derived;
+ }
  return {
   input,output,cached,reasoning,total,
   format:native?'gemini':'openai',source:provenance,
@@ -34,15 +41,9 @@ function estimateCost(usage, price) {
  if (!price) return unknown('price_missing');
  try { validatePrice(price); } catch { return unknown('price_invalid'); }
  if (usage.input === null || usage.output === null) return unknown('token_breakdown_missing');
- if (!usage.validCache) return unknown('cache_count_invalid');
  if (price.inputPerMillion === null || price.outputPerMillion === null) return unknown('rate_missing');
- let cached = usage.cached;
- if (cached === null) {
-  if (price.cachedPerMillion !== price.inputPerMillion) return unknown('cache_breakdown_missing');
-  cached = 0; // Equal rates: unknown cache split cannot affect the price.
- }
- if (cached > 0 && price.cachedPerMillion === null) return unknown('cache_rate_missing');
- let value = (usage.input-cached)*price.inputPerMillion + cached*(price.cachedPerMillion ?? 0);
+ // Cache discounts are intentionally ignored: all input tokens use the uncached input rate.
+ let value = usage.input*price.inputPerMillion;
  value += usage.output*price.outputPerMillion;
  if (!usage.reasoningIncludedInOutput) {
   if (price.reasoningMode === 'unknown') return unknown('reasoning_price_unknown');

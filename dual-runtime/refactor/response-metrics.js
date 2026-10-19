@@ -17,7 +17,12 @@ class ResponseMetrics {
   const usage=normalizeUsage(obj);
   // Usage chunks are normally cumulative: never sum cumulative snapshots.
   if(usage)this.usage=usage;
-  if(obj.error)this.applicationError=true;
+  if(obj.error){
+   this.applicationError=true;
+   // Only the machine-readable category is kept; message text may echo user content.
+   const e=obj.error,st=e&&typeof e==='object'?(e.status||e.type||e.code):null;
+   if(!this.errorKind&&st!=null&&/^[A-Za-z0-9_]{1,40}$/.test(String(st)))this.errorKind=String(st);
+  }
   const text=(obj.choices||[]).some(c=>
    typeof c?.delta?.content==='string' && c.delta.content.length>0 ||
    typeof c?.message?.content==='string' && c.message.content.length>0) ||
@@ -83,17 +88,24 @@ class ResponseMetrics {
     if(this.stream){
      if(this.buffer && !this.discardLine)this.line(this.buffer);
      if(complete)this.line('');
-    }else if(complete && !this.limited)this.parse(this.buffer);
+    }else if(complete && !this.limited){
+     // Workers occasionally send SSE frames without an event-stream content type.
+     if(/^\s*(data:|:)/.test(this.buffer)){
+      const text=this.buffer;this.buffer='';this.stream=true;
+      this.feed(text);if(this.buffer)this.line(this.buffer);this.line('');
+     }else this.parse(this.buffer);
+    }
    }catch{this.malformed=true;}
    this.closed=true;this.complete=complete;this.durationMs=this.clock()-this.startedAt;
    this.buffer='';this.event=[];
   }
   return {
-   usage:this.usage,usageComplete:!!this.usage && this.complete && !this.limited && !this.malformed && !this.applicationError,
+   usage:this.usage,usageComplete:!!this.usage && (this.complete || this.done) && !this.limited && !this.malformed && !this.applicationError,
    firstByteMs:this.firstByteMs,firstContentMs:this.firstContentMs,durationMs:this.durationMs,
    timingSource:'coordinator-response-observer',transportComplete:this.complete,
    streamDoneSeen:this.done,applicationError:this.applicationError,
-   captureLimited:this.limited,malformed:this.malformed
+   captureLimited:this.limited,malformed:this.malformed,
+   ...(this.errorKind?{errorKind:this.errorKind}:{})
   };
  }
 }

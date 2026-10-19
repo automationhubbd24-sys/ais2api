@@ -66,7 +66,8 @@ class CatalogRouting {
   }
   const snapshot=this.snapshot(slot,account);
   if(!snapshot)return false;
-  const models=snapshot.models.filter(m=>this.policies.has(m.id)&&m.methods?.includes("generateContent"));
+  let models=snapshot.models.filter(m=>this.policies.has(m.id)&&m.methods?.includes("generateContent"));
+  if(this.isPremium(account))models=models.filter(m=>this.policies.get(m.id).quotaFamily==="ultra");
   if(!models.length)return false;
   return models.every(m=>{
    const p=this.policies.get(m.id),q=this.dispatch.quotas.view(account,m.id,p.quotaFamily);
@@ -84,7 +85,10 @@ class CatalogRouting {
   const plans=demanded.length?demanded:this.exhausted(slot)?known
    .filter(m=>this.policies.has(m.id)&&m.methods?.includes('generateContent'))
    .map(m=>({model:m.id,quotaFamily:this.policies.get(m.id).quotaFamily})):[];
+  const premium=this.isPremium(owner.current);
   for(const plan of plans){
+   // Pro/Ultra accounts keep their slot through flash/pro cooling; only gemini-4-argon (ultra family) exhaustion rotates them.
+   if(premium&&plan.quotaFamily!=="ultra"&&!((pool.cooldowns.get(owner.current)||0)>now))continue;
    if(!this.exhausted(slot,plan))continue;
    const excluded=new Set(plan.excludedAccounts||[]);
    for(let i=0;i<pool.ids.length;i++){

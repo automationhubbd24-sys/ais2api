@@ -43,6 +43,7 @@ test('200 application errors and disconnected streams are not successes',async()
   [{status:200,metrics:{applicationError:true,transportComplete:true}},'application_error'],
   [{cancelled:true},'cancelled'],
   [{status:200,metrics:{transportComplete:false}},'uncertain'],
+  [{status:200,metrics:{transportComplete:false,streamDoneSeen:true,usageComplete:true}},'success'],
   [{status:403},'http_error']
  ]){
   const h=fake();await invoke(create({history:h,forward:async()=>result}));
@@ -55,14 +56,14 @@ test('request history never mutates execution ticket',async()=>{
  assert.equal(JSON.stringify(ticket),before);
 });
 
-test('continuation usage is not presented as a verified aggregate',async()=>{
+test('anti-truncation aggregate usage stays countable',async()=>{
  const h=fake();
  const result={status:200,metrics:{transportComplete:true,usageComplete:true,usage:{input:10,output:20}}};
  const f=create({history:h,forward:async()=>result});
  const actual=await invoke(f);
  assert.equal(actual,result);
  assert.equal(result.metrics.usageComplete,true);
- assert.equal(h.calls[1][2].metrics.usageComplete,false);
+ assert.equal(h.calls[1][2].metrics.usageComplete,true);
  assert.equal(h.calls[1][2].metrics.usage.output,20);
 });
 test('ordinary model usage completeness is preserved',async()=>{
@@ -70,4 +71,20 @@ test('ordinary model usage completeness is preserved',async()=>{
  const result={status:200,metrics:{transportComplete:true,usageComplete:true}};
  await invoke(create({history:h,forward:async()=>result}),{model:'gemini-test-flash'});
  assert.equal(h.calls[1][2].metrics.usageComplete,true);
+});
+test('successful request without usage is counted as a usage miss',async()=>{
+ const h=fake();const f=create({history:h,forward:async()=>({status:200,metrics:{transportComplete:true,usageComplete:false,malformed:true}})});
+ const warn=console.warn;console.warn=()=>{};
+ try{await invoke(f);}finally{console.warn=warn;}
+ assert.equal(f.status().usageMissing,1);assert.equal(f.status().lastUsageMissing.malformed,true);
+});
+test('usage misses are persisted and reloaded after restart',async()=>{
+ const fs=require('fs'),os=require('os'),path=require('path');
+ const file=path.join(fs.mkdtempSync(path.join(os.tmpdir(),'miss-')),'m.jsonl');
+ const h=fake();
+ await invoke(create({history:h,missLog:file,forward:async()=>({status:200,metrics:{transportComplete:true,usageComplete:false}})}));
+ assert.equal(fs.readFileSync(file,'utf8').trim().split('\n').length,1);
+ const again=create({history:fake(),missLog:file,forward:async()=>({status:200})});
+ assert.equal(again.status().usageMissingTotal,1);
+ assert.equal(again.status().usageMissing,0);
 });

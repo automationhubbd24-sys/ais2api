@@ -1,7 +1,8 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),vm=require('vm'),path=require('path'),os=require('os');
-const html=fs.readFileSync(path.join(__dirname,'../code/import-ui.html'),'utf8');
-const code=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+// The add-account / mail settings UI now lives in the console (index.html + admin-tools.js).
+const html=fs.readFileSync(path.join(__dirname,'ui/index.html'),'utf8');
+const code=fs.readFileSync(path.join(__dirname,'ui/admin-tools.js'),'utf8');
 function ui(){
  const nodes={};for(const [,id] of html.matchAll(/\bid="([^"]+)"/g))nodes[id]={value:'',textContent:'',hidden:false};
  const ctx=vm.createContext({URL,$:id=>nodes[id]});

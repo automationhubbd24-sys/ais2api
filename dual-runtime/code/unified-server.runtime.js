@@ -13,6 +13,8 @@ const AT = (function () {
 const AT_PREFIX = "anti-truncation/";
 const AT_TOOL_NAME = "emit_answer";
 const AT_MAX_ATTEMPTS = 3;
+// After this much time since the request arrived, an unfinished round fails instead of continuing.
+const AT_CONTINUE_DEADLINE_MS = 360000;
 const AT_SYSTEM_HINT =
   "\n\n[SYSTEM CONSTRAINT] You have a tool named emit_answer. " +
   "When you are ready to output your final complete answer, you MUST call " +
@@ -108,7 +110,42 @@ function atBuildContinuationBody(googleBody, googleResponse, prevAnswer) {
   }
   return body;
 }
-  return { AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, fixTrailingModelTurn, atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody };
+const AT_BLOCK_REASONS = /^(SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY|OTHER_SAFETY)$/;
+function atBlockInfo(googleResponse) {
+  if (!googleResponse || typeof googleResponse !== 'object') return null;
+  const candidate = Array.isArray(googleResponse.candidates) ? googleResponse.candidates[0] : null;
+  const finish = candidate && typeof candidate.finishReason === 'string' ? candidate.finishReason : null;
+  const promptBlock = googleResponse.promptFeedback && typeof googleResponse.promptFeedback.blockReason === 'string'
+    ? googleResponse.promptFeedback.blockReason : null;
+  let reason = null, stage = null;
+  if (promptBlock && /^[A-Z_]{1,40}$/.test(promptBlock) && promptBlock !== 'BLOCK_REASON_UNSPECIFIED') { reason = promptBlock; stage = 'prompt'; }
+  else if (finish && AT_BLOCK_REASONS.test(finish)) { reason = finish; stage = 'response'; }
+  if (!reason) return null;
+  const u = googleResponse.usageMetadata;
+  const promptTokens = u && Number.isSafeInteger(u.promptTokenCount) && u.promptTokenCount >= 0 ? u.promptTokenCount : null;
+  return { reason, stage, promptTokens };
+}
+function atBlockMessage(info) {
+  return '上游内容安全拦截（' + info.reason + '）：模型拒绝生成，本次没有输出。' +
+    '这类拦截有时是误判，可以直接重试；多次被拦请调整内容。';
+}
+// Upstream ended the generation early (finish=OTHER etc.) without emit_answer. Nothing is returned
+// to the client; the error carries the finish reason and token counts so the request record shows why.
+function atFinishPayload(info, httpStatus) {
+  const payload = info.timeLimit
+    ? { error: { code: httpStatus, type: 'upstream_incomplete', status: 'AT_TIME_LIMIT',
+      message: '已用时约 ' + Math.round(info.elapsedMs / 60000) + ' 分钟仍未得到完整答案（finish=' + info.reason + '），超过 6 分钟不再续写，直接返回失败。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } }
+    : { error: { code: httpStatus, type: 'upstream_incomplete', status: 'FINISH_' + info.reason,
+    message: '上游中途结束（finish=' + info.reason + '），未返回内容。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } };
+  if (info.promptTokens !== null || info.outputTokens !== null) payload.usage = { prompt_tokens: info.promptTokens, completion_tokens: info.outputTokens };
+  return payload;
+}
+function atBlockPayload(info, httpStatus) {
+  const payload = { error: { code: httpStatus, type: 'content_blocked', status: info.reason, message: atBlockMessage(info), block_stage: info.stage } };
+  if (info.promptTokens !== null) payload.usage = { prompt_tokens: info.promptTokens };
+  return payload;
+}
+  return { AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, AT_CONTINUE_DEADLINE_MS, fixTrailingModelTurn, atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody, atBlockInfo, atBlockMessage, atBlockPayload, atFinishPayload };
 })();
 
 // ===================================================================================
@@ -390,16 +427,17 @@ class BrowserManager {
       {
         const GCB_INSTALL = `(function(){var M=window.default_MakerSuite;if(!M||!M.Cn||!M.GB)return 'nom';
 if(!M.Cn.__gcb){var o=M.Cn;var f=function(a,b){if(a&&a.mb)window.__tb=a;return o.apply(this,arguments)};f.__gcb=1;M.Cn=f;}
-if(!window.__gcCall||window.__gcCall.v!==3){window.__gcCall=async function(body,ht,key,hx){hx=hx||{};var M=window.default_MakerSuite,tb=window.__tb;if(!tb)return JSON.stringify({s:503,t:'[14,"token service not ready"]'});
+if(!window.__gcCall||window.__gcCall.v!==5){window.__gcCall=async function(body,ht,key,hx){hx=hx||{};var M=window.default_MakerSuite,tb=window.__tb;if(!tb)return JSON.stringify({s:503,t:'[14,"token service not ready"]'});
 var md=tb.getMetadata()||{};var waa=md['X-Goog-Api-Key'];if(!key){var mb=tb.mb||{};for(var k in mb){var v=mb[k];if(typeof v==='string'&&/^AIza[0-9A-Za-z_-]{30,}$/.test(v)&&v!==waa){key=v;break;}}}
 if(!key)return JSON.stringify({s:503,t:'[14,"page api key not found"]'});
 var base='https://alkalimakersuite-pa.clients6.google.com';var au=md['X-Goog-AuthUser']!=null?String(md['X-Goog-AuthUser']):'0';
 body[4]=await M.Cn(tb,await M.GB(ht));
-var hd={'content-type':'application/json+protobuf','x-user-agent':'grpc-web-javascript/0.1','x-goog-api-key':key,'authorization':md.Authorization,'x-goog-authuser':au};var tier=hx.tier||null;if(!tier){if(window.__gcTier===undefined){try{var tr=await fetch(base+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GetAiStudioBenefitTier',{method:'POST',credentials:'include',headers:hd,body:'[]'});var tj=tr.ok?JSON.parse(await tr.text()):null;var tv=Array.isArray(tj)?tj[0]:null;window.__gcTier=tv===1?'TIER1':tv===2?'TIER2':null;}catch(e){window.__gcTier=null;}}tier=window.__gcTier;}if(tier)hd['x-aistudio-g1-tier']=tier;if(hx.ext)hd['x-goog-ext-519733851-bin']=hx.ext;var r=await fetch(base+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent',{method:'POST',credentials:'include',headers:hd,body:JSON.stringify(body)});
-return JSON.stringify({s:r.status,t:await r.text(),tier:tier||''});};window.__gcCall.v=3;}
+var hd={'content-type':'application/json+protobuf','x-user-agent':'grpc-web-javascript/0.1','x-goog-api-key':key,'authorization':md.Authorization,'x-goog-authuser':au};var tier=hx.tier||null;if(!tier){if(window.__gcTier===undefined){try{var tr=await fetch(base+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GetAiStudioBenefitTier',{method:'POST',credentials:'include',headers:hd,body:'[]'});var tj=tr.ok?JSON.parse(await tr.text()):null;var tv=Array.isArray(tj)?tj[0]:null;window.__gcTier=tv===1?'TIER1':tv===2?'TIER2':null;}catch(e){window.__gcTier=null;}}tier=window.__gcTier;}if(tier)hd['x-aistudio-g1-tier']=tier;if(hx.ext)hd['x-goog-ext-519733851-bin']=hx.ext;var ac=new AbortController(),hm=hx.hardMs||660000,wd=setTimeout(function(){ac.abort();},hm);var ab_=window.__gcAb=window.__gcAb||{};if(hx.op)ab_[hx.op]=ac;try{var r=await fetch(base+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent',{method:'POST',credentials:'include',headers:hd,body:JSON.stringify(body),signal:ac.signal});var tx=await r.text();}catch(e){if(ac.__cancel)return JSON.stringify({s:499,t:'cancelled',tier:tier||''});var ab=ac.signal.aborted;return JSON.stringify({s:504,t:JSON.stringify({error:{code:504,status:ab?'UPSTREAM_NO_RESPONSE':'UPSTREAM_CONNECTION_LOST',message:ab?('Google 超过 '+Math.round(hm/60000)+' 分钟没有返回，已主动中止，请重试。'):('与 Google 的连接中途断开：'+String(e&&e.message||e)+'，请重试。')}}),tier:tier||''});}finally{clearTimeout(wd);if(hx.op)delete ab_[hx.op];}
+return JSON.stringify({s:r.status,t:tx,tier:tier||''});};window.__gcCall.v=5;window.__gcAbort=function(op){var c=window.__gcAb&&window.__gcAb[op];if(!c)return false;c.__cancel=true;c.abort();return true;};}
 return window.__tb?'ok':'wait';})()`;
         const pg = this.page, log = this.logger;
-        global.__gcbPage = pg; let gcbKey = null; const gcbHx = {}; const gcbWaa = 'AIzaSyBGb5fGAyC-pRcRU6MUHb__b_vKha71HRE';
+        global.__gcbPage = pg; let gcbKey = null; const gcbHx = {}; const gcbWaa = 'AIzaSyBGb5fGAyC-pRcRU6MUHb__b_vKha71HRE'; const GCB_HARD_MS = Number(process.env.GCB_HARD_MS) || 660000; const gcbOps = new Map(); const gcbCancelled = new Set(); let gcbSeq = 0;
+        this.gcbCancel = rid => { gcbCancelled.add(rid); setTimeout(() => gcbCancelled.delete(rid), 120000).unref?.(); const op = gcbOps.get(rid); if (!op) return false; gcbOps.delete(rid); log.info('[GCBridge] client cancelled ' + rid + '; aborting upstream call ' + op); pg.evaluate(o => window.wrappedJSObject.__gcAbort(o), op).catch(() => {}); return true; }; // Google itself cuts at ~600s
         this.context.on('request', r => { try { if (!/alkalimakersuite-pa\.clients6\.google\.com\/\$rpc\/.*MakerSuiteService\//.test(r.url())) return; const k = r.headers()['x-goog-api-key']; if (k && k !== gcbWaa && /^AIza/.test(k)) gcbKey = k; const h = r.headers(); if (h['x-aistudio-g1-tier']) gcbHx.tier = h['x-aistudio-g1-tier']; if (h['x-goog-ext-519733851-bin']) gcbHx.ext = h['x-goog-ext-519733851-bin']; } catch {} });
         const gcbInstall = () => pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_INSTALL).catch(() => 'err');
         const gcbTimer = setInterval(() => { if (pg.isClosed()) return clearInterval(gcbTimer); gcbInstall(); }, 3000);
@@ -412,6 +450,7 @@ return window.__tb?'ok':'wait';})()`;
         const decStruct = st => { const o = {}; for (const kv of ((st && st[0]) || [])) if (Array.isArray(kv)) o[kv[0]] = decVal(kv[1]); return o; };
         const TYP = { string: 1, number: 2, integer: 3, boolean: 4, array: 5, object: 6 };
         const encSchema = sc => { if (!sc || typeof sc !== 'object') return null; const a = [];
+          if (!sc.type && Array.isArray(sc.anyOf) && sc.anyOf.length) { const vs = sc.anyOf.filter(v => v && typeof v === 'object'); const nn = vs.filter(v => String(v.type || '').toLowerCase() !== 'null'); const pick = nn[0] || vs[0] || {}; const alt = nn.map(v => String(v.type || 'object').toLowerCase()); const desc = [sc.description || pick.description, alt.length > 1 ? 'Accepted types: ' + alt.join(' | ') : ''].filter(Boolean).join(' '); sc = { ...pick, description: desc || undefined, nullable: vs.length !== nn.length || sc.nullable || pick.nullable || undefined }; }
           a[0] = TYP[String(sc.type || 'object').toLowerCase()] || 6;
           if (sc.format) a[1] = sc.format; if (sc.description) a[2] = sc.description; if (sc.nullable != null) a[3] = !!sc.nullable;
           if (Array.isArray(sc.enum)) a[4] = sc.enum.map(String); if (sc.items) a[5] = encSchema(sc.items);
@@ -441,6 +480,8 @@ return window.__tb?'ok':'wait';})()`;
           cfg[5] = gc.topP != null ? gc.topP : 0.95;
           cfg[6] = gc.topK != null ? gc.topK : 64;
           if (gc.responseMimeType) cfg[7] = gc.responseMimeType;
+          const rsc = gc.responseSchema || gc.response_schema;
+          if (rsc) { cfg[7] = 'application/json'; cfg[8] = encSchema(rsc); }
           cfg[13] = 1;
           const th = [];
           th[0] = tc.includeThoughts === false ? 0 : 1;
@@ -500,21 +541,27 @@ return window.__tb?'ok':'wait';})()`;
           try { a = JSON.parse(req.postData() || ''); } catch {}
           const mm = Array.isArray(a) && typeof a[0] === 'string' && a[0].match(/models\/([^:/?]+):(stream)?generateContent/i);
           if (!mm) return route.continue();
+          // Legacy path: models Google no longer serves via MakerSuite GenerateContent still answer through the page's original Proxy call
+          if ((process.env.GCB_LEGACY_MODELS || 'gemini-3.7-flash').split(',').map(x => x.trim()).filter(Boolean).some(x => mm[1] === x || mm[1].startsWith(x + '-'))) { log.info('[GCBridge] ' + mm[1] + ' legacy proxy path'); return route.continue(); }
           const streamed = /ProxyStreamedCall/.test(req.url());
           try {
-            const g = JSON.parse(a[1] || '{}');
+            const g = JSON.parse(a[1] || '{}'); const gcbRid = typeof g.__aisRid === 'string' ? g.__aisRid : null; delete g.__aisRid;
             const { body, ht } = buildBody(mm[1], g);
             await gcbInstall();
-            const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ',' + JSON.stringify(gcbKey) + ',' + JSON.stringify(gcbHx) + ')';
-            const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise((_, rj) => setTimeout(() => rj(new Error('GenerateContent timeout')), 600000))]);
-            const r = JSON.parse(raw);
-            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
+            const gcbT0 = Date.now(); const gcbOp = 'g' + (++gcbSeq); if (gcbRid) { if (gcbCancelled.has(gcbRid)) { log.info('[GCBridge] ' + gcbRid + ' already cancelled; not calling upstream'); return route.abort().catch(() => {}); } gcbOps.set(gcbRid, gcbOp); }
+            const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ',' + JSON.stringify(gcbKey) + ',' + JSON.stringify(Object.assign({}, gcbHx, { hardMs: GCB_HARD_MS, op: gcbOp })) + ')';
+            let gcbBk; const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise(rs => { gcbBk = setTimeout(() => rs(JSON.stringify({ s: 504, t: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_NO_RESPONSE', message: '浏览器页面超过 ' + Math.round((GCB_HARD_MS + 30000) / 60000) + ' 分钟没有返回，已主动中止，请重试。' } }) })), GCB_HARD_MS + 30000); })]).finally(() => clearTimeout(gcbBk)); // backstop only: Google cuts at ~600s
+            if (gcbRid) gcbOps.delete(gcbRid); const r = JSON.parse(raw);
+            if (r.s === 499) { log.info('[GCBridge] ' + mm[1] + ' upstream call ' + gcbOp + ' cancelled after ' + (Date.now() - gcbT0) + 'ms'); return route.abort().catch(() => {}); }
+            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
             const arr0 = JSON.parse(r.t); const isChunk = x => Array.isArray(x) && Array.isArray(x[0]) && Array.isArray(x[0][0]) && Array.isArray(x[0][0][0]) && x[0][0][0][1] === 'model'; const arr = Array.isArray(arr0) && arr0.some(isChunk) ? arr0 : (Array.isArray(arr0) && Array.isArray(arr0[0]) ? arr0[0] : []);
             const chunks = arr.map(convChunk).filter(c => c && c.candidates && c.candidates.length);
             let out;
             if (streamed) { const tail = arr.length && !isChunk(arr[arr.length - 1]) ? arr[arr.length - 1] : null; out = '[[' + chunks.map(c => JSON.stringify([JSON.stringify(c)])).concat(tail ? [JSON.stringify(tail)] : []).join(',') + ']]'; }
             else out = JSON.stringify([JSON.stringify(merge(chunks))]);
-            log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length + ' tier=' + (r.tier || '-'));
+            { const lf = (chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'; if (lf !== 'STOP') { try { const sh = v => v == null ? null : typeof v === 'string' ? 's' + v.length : Array.isArray(v) ? 'a' + JSON.stringify(v).length : typeof v; const raw = arr.filter(isChunk).map(m => (m[0] || []).map(c => [(Array.isArray(c && c[0] && c[0][0]) ? c[0][0] : []).map(p2 => Array.isArray(p2) ? p2.map((v, i) => v == null ? null : i + ':' + sh(v)).filter(Boolean).join('|') : sh(p2)).join(' ; '), 'cand=' + (Array.isArray(c) ? c.map((v, i) => v == null ? null : i + ':' + sh(v)).filter(Boolean).join('|') : sh(c))].join(' / ')).join(' || ')); log.warn('[GCBridge] shape ' + mm[1] + ' finish=' + lf + ' top=' + arr0.length + ' chunks=' + raw.length + ' :: ' + raw.slice(-3).join(' ## ').slice(0, 1500)); } catch (e) { log.warn('[GCBridge] shape failed ' + e.message); } } }
+            { const lc = chunks[chunks.length - 1]; if (chunks.length && !(lc.candidates[0] && lc.candidates[0].finishReason)) { let chars = 0; for (const c of chunks) for (const p of ((c.candidates[0] && c.candidates[0].content && c.candidates[0].content.parts) || [])) { if (typeof p.text === 'string' && !p.thought) chars += p.text.length; const fa = p.functionCall && p.functionCall.args; if (fa && typeof fa.answer === 'string') chars += fa.answer.length; } const sec = Math.round((Date.now() - gcbT0) / 1000); log.warn('[GCBridge] ' + mm[1] + ' upstream cut: no finishReason after ' + sec + 's chunks=' + chunks.length + ' bytes=' + String(r.t || '').length + ' chars=' + chars); return route.fulfill({ status: 504, contentType: 'application/json; charset=UTF-8', body: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_CUT', message: 'Google 在约 ' + Math.max(1, Math.round(sec / 60)) + ' 分钟时断开连接，回答未写完（已生成约 ' + chars + ' 字被丢弃）。请重试，或让回答短一些。' } }) }); } }
+            log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' bytes=' + String(r.t || '').length + ' finish=' + ((chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'));
             return route.fulfill({ status: 200, contentType: 'application/json+protobuf; charset=UTF-8', body: out });
           } catch (e) {
             log.warn('[GCBridge] error ' + e.message);
@@ -1036,7 +1083,7 @@ class LoggingService {
 }
 
 class MessageQueue extends EventEmitter {
-  constructor(timeoutMs = 600000) {
+  constructor(timeoutMs = 0) {
     super();
     this.messages = [];
     this.waitingResolvers = [];
@@ -1064,7 +1111,7 @@ class MessageQueue extends EventEmitter {
       }
       const resolver = { resolve, reject };
       this.waitingResolvers.push(resolver);
-      const timeoutId = setTimeout(() => {
+      const timeoutId = timeoutMs > 0 && setTimeout(() => {
         const index = this.waitingResolvers.indexOf(resolver);
         if (index !== -1) {
           this.waitingResolvers.splice(index, 1);
@@ -1567,6 +1614,7 @@ class RequestHandler {
       this.browserManager.notifyUserActivity();
     }
     const requestId = this._generateRequestId();
+    const atRequestStartedAt = Date.now();
     const isOpenAIStream = req.body.stream === true;
     let proxyRequestModel = null;
     const model = req.body.model || "gemini-2.5-flash";
@@ -1629,7 +1677,11 @@ class RequestHandler {
           `[Adapter] 收到来自浏览器的错误，将触发切换逻辑。状态码: ${initialMessage.status}, 消息: ${initialMessage.message}`,
         );
         await this._handleRequestFailureAndSwitch(initialMessage, res);
-        if (isOpenAIStream) {
+        if (isOpenAIStream && !res.headersSent) {
+          // Nothing streamed yet: report the real upstream status so the failure is not
+          // recorded as a successful request without usage.
+          this._sendErrorResponse(res, initialMessage.status || 502, initialMessage.message);
+        } else if (isOpenAIStream) {
           if (!res.writableEnded) {
             res.write("data: [DONE]\n\n");
             res.end();
@@ -1664,7 +1716,7 @@ class RequestHandler {
           const streamState = { inThought: false };
 
           while (true) {
-            const message = await messageQueue.dequeue(300000); // 5分钟超时
+            const message = await messageQueue.dequeue(); // 5分钟超时
             if (message.type === "STREAM_END") {
               if (streamState.inThought) {
                 const closeThoughtPayload = {
@@ -1703,12 +1755,12 @@ class RequestHandler {
 
           let fullBody = "";
           while (true) {
-            const message = await messageQueue.dequeue(300000);
+            const message = await messageQueue.dequeue();
             if (message.type === "STREAM_END") break;
             if (message.data) fullBody += message.data;
           }
 
-          if (AT.atIsEnabled(model)) { const result = await this._atContinueUntilAnswer(JSON.parse(fullBody), googleBody, res, model, requestId); if (!result || typeof result.answer !== /string/.source) throw Object.assign(Error(/AT_incomplete_stream_answer/.source),{status:502}); fullBody = JSON.stringify({candidates:[{content:{role:/model/.source,parts:[{text:result.answer}]},finishReason:result.finishReason}],...(result.usageMetadata?{usageMetadata:result.usageMetadata}:{})}); }
+          if (AT.atIsEnabled(model)) { const result = await this._atContinueUntilAnswer(JSON.parse(fullBody), googleBody, res, model, requestId, atRequestStartedAt); if (!result || typeof result.answer !== /string/.source) throw Object.assign(Error(/AT_incomplete_stream_answer/.source),{status:502}); fullBody = JSON.stringify({candidates:[{content:{role:/model/.source,parts:[{text:result.answer}]},finishReason:result.finishReason}],...(result.usageMetadata?{usageMetadata:result.usageMetadata}:{})}); }
           const translatedChunk = this._translateGoogleToOpenAIStream(
             fullBody,
             model,
@@ -1724,7 +1776,7 @@ class RequestHandler {
       } else {
         let fullBody = "";
         while (true) {
-          const message = await messageQueue.dequeue(300000);
+          const message = await messageQueue.dequeue();
           if (message.type === "STREAM_END") {
             break;
           }
@@ -1738,7 +1790,7 @@ class RequestHandler {
         let atAnswer = null;
         if (atEnabledLocal) {
           const atResult = await this._atContinueUntilAnswer(
-            googleResponse, googleBody, res, model, requestId,
+            googleResponse, googleBody, res, model, requestId, atRequestStartedAt,
           );
           if (atResult && typeof atResult.answer === "string") {
             atAnswer = atResult.answer;
@@ -1814,7 +1866,7 @@ class RequestHandler {
         res.status(200).json(openaiResponse);
       }
     } catch (error) {
-      if (AT.atIsEnabled(model)) { if (!res.destroyed) { if (res.headersSent) this._sendErrorChunkToClient(res,error.message); else this._sendErrorResponse(res,error.status || 502,error.message); } return; }
+      if (AT.atIsEnabled(model)) { if (!res.destroyed) { if (error.atBlock || error.atFinish) { const payload = error.atBlock ? AT.atBlockPayload(error.atBlock, error.status || 502) : AT.atFinishPayload(error.atFinish, error.status || 502); if (res.headersSent) { if (!res.writableEnded) res.write('data: ' + JSON.stringify(payload) + '\n\n'); } else res.status(error.status || 502).type('application/json').send(JSON.stringify(payload)); } else if (res.headersSent) this._sendErrorChunkToClient(res,error.message); else this._sendErrorResponse(res,error.status || 502,error.message); } return; }
       this._handleRequestError(error, res);
     } finally {
       this.connectionRegistry.removeMessageQueue(requestId);
@@ -1835,6 +1887,7 @@ class RequestHandler {
 
   // --- 新增一个辅助方法，用于发送取消指令 ---
   _cancelBrowserRequest(requestId) {
+    try { const bm = this.browserManager || (this.serverSystem && this.serverSystem.browserManager); if (bm && typeof bm.gcbCancel === 'function') bm.gcbCancel(requestId); } catch {}
     const connection = this.connectionRegistry.getFirstConnection();
     if (connection) {
       this.logger.info(
@@ -1898,7 +1951,36 @@ class RequestHandler {
       streaming_mode: this.serverSystem.streamingMode,
     };
   }
+  // maxOutputTokens is always the model's own upstream cap; any client value is ignored.
+  _modelOutputLimit(model) {
+    try {
+      const cat = this.serverSystem && this.serverSystem.modelCatalog;
+      const snap = cat && typeof cat.status === 'function' ? cat.status().snapshot : null;
+      const m = snap && Array.isArray(snap.models) ? snap.models.find(x => x.id === model) : null;
+      const OVERRIDE = { 'gemini-4-argon': 65536 }; // Google lists 32768 but accepts 65536
+      if (OVERRIDE[model]) return OVERRIDE[model];
+      return m && Number.isSafeInteger(m.outputTokenLimit) && m.outputTokenLimit > 0 ? m.outputTokenLimit : null;
+    } catch { return null; }
+  }
+  _pinMaxOutputTokens(proxyRequest) {
+    const mm = proxyRequest && typeof proxyRequest.path === 'string' && proxyRequest.path.match(/^\/v1beta\/models\/([^:/?]+):(?:generateContent|streamGenerateContent)$/);
+    if (!mm || typeof proxyRequest.body !== 'string' || !proxyRequest.body) return;
+    let body; try { body = JSON.parse(proxyRequest.body); } catch { return; }
+    if (!body || typeof body !== 'object') return;
+    const gc = body.generationConfig && typeof body.generationConfig === 'object' ? body.generationConfig : (body.generation_config && typeof body.generation_config === 'object' ? body.generation_config : null);
+    const before = gc ? (gc.maxOutputTokens ?? gc.max_output_tokens) : undefined;
+    const limit = this._modelOutputLimit(mm[1]);
+    const cfg = gc || (body.generationConfig = {});
+    delete cfg.max_output_tokens;
+    if (limit) cfg.maxOutputTokens = limit; else delete cfg.maxOutputTokens;
+    if (before !== cfg.maxOutputTokens) this.logger.info('[MaxTokens] ' + mm[1] + ' client=' + (before ?? '-') + ' -> ' + (limit ?? 'default'));
+    // internal: lets a client cancel abort the upstream call; stripped in-page before Google. Legacy models go through the page's own Proxy call (already aborted by cancel), so they are left untouched.
+    const gcbLegacy = (process.env.GCB_LEGACY_MODELS || 'gemini-3.7-flash').split(',').map(x => x.trim()).filter(Boolean).some(x => mm[1] === x || mm[1].startsWith(x + '-'));
+    if (!gcbLegacy && typeof proxyRequest.request_id === 'string') body.__aisRid = proxyRequest.request_id;
+    proxyRequest.body = JSON.stringify(body);
+  }
   _forwardRequest(proxyRequest) {
+    this._pinMaxOutputTokens(proxyRequest);
     const connection = this.connectionRegistry.getFirstConnection();
     if (connection) {
       connection.send(JSON.stringify(proxyRequest));
@@ -1947,17 +2029,7 @@ class RequestHandler {
         }
         this._forwardRequest(proxyRequest);
         try {
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    "Response from browser timed out after 300 seconds",
-                  ),
-                ),
-              300000,
-            ),
-          );
+          const timeoutPromise = new Promise(() => {}); // no request time limit
           lastMessage = await Promise.race([
             messageQueue.dequeue(),
             timeoutPromise,
@@ -2162,7 +2234,7 @@ class RequestHandler {
       // 2. 准备一个缓冲区，并确保循环等待直到收到结束信号
       let fullBody = "";
       while (true) {
-        const message = await messageQueue.dequeue(300000);
+        const message = await messageQueue.dequeue();
         if (message.type === "STREAM_END") {
           this.logger.info("[Request] 收到结束信号，数据接收完毕。");
           break;
@@ -2240,7 +2312,7 @@ class RequestHandler {
     }
   }
 
-  async _atContinueUntilAnswer(googleResponse, googleBody, res, model, requestId) {
+  async _atContinueUntilAnswer(googleResponse, googleBody, res, model, requestId, startedAt = Date.now()) {
     const atRealModelName = AT.atRealModel(model);
     let previousOperationId = requestId;
     let attempt = 0;
@@ -2249,16 +2321,43 @@ class RequestHandler {
     const atUsage = {complete: true, sum: {}};
     const atAddUsage = (resp) => { const u = resp && resp.usageMetadata; if (!u || typeof u !== 'object') { atUsage.complete = false; return; } for (const key of ['promptTokenCount','candidatesTokenCount','thoughtsTokenCount','cachedContentTokenCount','totalTokenCount']) { if (Number.isSafeInteger(u[key]) && u[key] >= 0) atUsage.sum[key] = (atUsage.sum[key] || 0) + u[key]; } };
     atAddUsage(current);
+    // Diagnostics only: shape and size of each round, never the content itself.
+    let roundStartedAt = null;
+    const atRoundLog = (round, resp, r) => {
+      try {
+        const c = resp && resp.candidates && resp.candidates[0];
+        const parts = (c && c.content && Array.isArray(c.content.parts)) ? c.content.parts : [];
+        let textParts = 0, textChars = 0, thoughtParts = 0, thoughtChars = 0; const calls = [];
+        for (const p of parts) {
+          if (p && p.functionCall) calls.push(String(p.functionCall.name || '?').slice(0, 40) + (p.functionCall.args && typeof p.functionCall.args.answer === 'string' ? '(answer=' + p.functionCall.args.answer.length + ')' : '(no-answer)'));
+          else if (p && typeof p.text === 'string') { if (p.thought) { thoughtParts++; thoughtChars += p.text.length; } else { textParts++; textChars += p.text.length; } }
+        }
+        const u = (resp && resp.usageMetadata) || {};
+        this.logger.info('[AT] round ' + round + ' model=' + atRealModelName + ' req=' + requestId +
+          ' ms=' + (roundStartedAt ? Date.now() - roundStartedAt : '-') +
+          ' candidates=' + ((resp && resp.candidates) ? resp.candidates.length : 0) +
+          ' finish=' + ((c && c.finishReason) || '-') + ' parts=' + parts.length +
+          ' text=' + textParts + '/' + textChars + 'ch thought=' + thoughtParts + '/' + thoughtChars + 'ch' +
+          ' calls=[' + calls.join(',') + ']' +
+          ' emit_answer=' + (r.found ? 'yes' : 'no') +
+          ' tok(in/out/think)=' + (u.promptTokenCount ?? '-') + '/' + (u.candidatesTokenCount ?? '-') + '/' + (u.thoughtsTokenCount ?? '-') +
+          (resp && resp.promptFeedback && resp.promptFeedback.blockReason ? ' blocked=' + resp.promptFeedback.blockReason : ''));
+      } catch (e) { this.logger.warn('[AT] round log failed: ' + e.message); }
+    };
     while (attempt <= AT.AT_MAX_ATTEMPTS) {
       attempt++;
       const r = AT.atExtractAnswer(current);
+      atRoundLog(attempt, current, r);
       if (r.found ? /^STOP$/.test(r.finishReason || String()) : false) {
         if (atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount)) r.usageMetadata = atUsage.sum;
+        else this.logger.warn("[AT] usage missing in at least one round; tokens for this request will be unknown");
         this.logger.info("[AT] emit_answer found on attempt " + attempt + ", len=" + r.answer.length);
         return r;
       }
       if (attempt > AT.AT_MAX_ATTEMPTS) break;
-      if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) return null;
+      if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) { this.logger.warn('[AT] giving up: finish=' + r.finishReason + ' on round ' + attempt); const atBlock = AT.atBlockInfo(current); if (atBlock) { if (attempt > 1) atBlock.promptTokens = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount) ? atUsage.sum.promptTokenCount : null; this.logger.warn('[AT] content blocked by upstream: reason=' + atBlock.reason + ' stage=' + atBlock.stage + ' round=' + attempt + ' promptTokens=' + (atBlock.promptTokens ?? '-')); throw Object.assign(Error('AT_content_blocked'), {status: 502, atBlock}); } { const c0 = current && current.candidates && current.candidates[0]; let chars = 0; for (const p of ((c0 && c0.content && c0.content.parts) || [])) if (p && typeof p.text === 'string' && !p.thought) chars += p.text.length; const ok = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount); const atFinish = { reason: String(r.finishReason).slice(0, 40).replace(/[^A-Z0-9_]/gi, '_'), round: attempt, chars, promptTokens: ok ? atUsage.sum.promptTokenCount : null, outputTokens: ok && Number.isSafeInteger(atUsage.sum.candidatesTokenCount) ? atUsage.sum.candidatesTokenCount : null }; this.logger.warn('[AT] upstream ended early: finish=' + atFinish.reason + ' round=' + attempt + ' chars=' + chars + ' tok(in/out)=' + (atFinish.promptTokens ?? '-') + '/' + (atFinish.outputTokens ?? '-') + ' ms=' + (roundStartedAt ? Date.now() - roundStartedAt : '-') + '; not continued, nothing returned'); throw Object.assign(Error('AT_upstream_finish_' + atFinish.reason), {status: 502, atFinish}); } }
+      { const elapsed = Date.now() - startedAt; if (elapsed >= AT.AT_CONTINUE_DEADLINE_MS) { const c0 = current && current.candidates && current.candidates[0]; let chars = 0; for (const p of ((c0 && c0.content && c0.content.parts) || [])) if (p && typeof p.text === 'string' && !p.thought) chars += p.text.length; const ok = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount); const atFinish = { reason: String(r.finishReason || 'NO_ANSWER').slice(0, 40).replace(/[^A-Z0-9_]/gi, '_'), round: attempt, chars, elapsedMs: elapsed, timeLimit: true, promptTokens: ok ? atUsage.sum.promptTokenCount : null, outputTokens: ok && Number.isSafeInteger(atUsage.sum.candidatesTokenCount) ? atUsage.sum.candidatesTokenCount : null }; this.logger.warn('[AT] not continuing: elapsed=' + elapsed + 'ms >= ' + AT.AT_CONTINUE_DEADLINE_MS + 'ms, finish=' + atFinish.reason + ' round=' + attempt + ' chars=' + chars + ' tok(in/out)=' + (atFinish.promptTokens ?? '-') + '/' + (atFinish.outputTokens ?? '-')); throw Object.assign(Error('AT_continue_deadline'), {status: 502, atFinish}); } }
+      this.logger.info('[AT] continuing because ' + (r.found ? 'emit_answer finish=' + r.finishReason : 'no emit_answer (finish=' + (r.finishReason || '-') + ')'));
       lastAnswer = r.answer || lastAnswer;
       if (typeof this._atWaitOperationDone !== /function/.source) throw Error(/AT_cleanup_hook_missing/.source);
       if (!await this._atWaitOperationDone(previousOperationId)) throw Error(/AT_previous_operation_not_settled/.source);
@@ -2266,8 +2365,11 @@ class RequestHandler {
       const contBody = AT.atBuildContinuationBody(googleBody, current, lastAnswer);
       const contId = this._generateRequestId();
       const contQueue = this.connectionRegistry.createMessageQueue(contId);
+      const contOnClose = () => { if (!res.writableEnded) { this.logger.warn('[AT] client gone during continuation #' + contId + '; cancelling upstream'); this._cancelBrowserRequest(contId); } };
+      res.on("close", contOnClose);
       try {
-        this.logger.info("[AT] continuation attempt " + attempt + "/" + AT.AT_MAX_ATTEMPTS);
+        this.logger.info("[AT] continuation attempt " + attempt + "/" + AT.AT_MAX_ATTEMPTS + " bodyChars=" + JSON.stringify(contBody).length + " prevAnswerChars=" + (lastAnswer ? lastAnswer.length : 0));
+        roundStartedAt = Date.now();
         this._forwardRequest({
           path: `/v1beta/models/${atRealModelName}:generateContent`,
           method: "POST",
@@ -2278,14 +2380,14 @@ class RequestHandler {
           is_generative: true,
           streaming_mode: "fake",
         });
-        const headerMsg = await contQueue.dequeue(300000);
+        const headerMsg = await contQueue.dequeue();
         if (headerMsg.event_type === "error") {
           this.logger.warn("[AT] continuation error: " + (headerMsg.message || "").slice(0, 200));
           return null;
         }
         let contFull = "";
         while (true) {
-          const m = await contQueue.dequeue(300000);
+          const m = await contQueue.dequeue();
           if (m.type === "STREAM_END") break;
           if (m.event_type === "chunk" && m.data) contFull += m.data;
         }
@@ -2296,6 +2398,7 @@ class RequestHandler {
         this.logger.warn("[AT] continuation failed: " + e.message);
         return null;
       } finally {
+        res.removeListener("close", contOnClose);
         this.connectionRegistry.removeMessageQueue(contId);
       }
     }
@@ -2359,7 +2462,7 @@ class RequestHandler {
         error: {
           code: status || 500,
           message: message,
-          status: "SERVICE_UNAVAILABLE", // 这是一个示例状态名
+          status: ({400: "INVALID_ARGUMENT", 401: "UNAUTHENTICATED", 403: "PERMISSION_DENIED", 404: "NOT_FOUND", 429: "RESOURCE_EXHAUSTED", 500: "INTERNAL", 502: "BAD_GATEWAY", 503: "UNAVAILABLE", 504: "DEADLINE_EXCEEDED"})[status || 500] || "UNKNOWN",
         },
       };
       // 2. 设置响应类型为 application/json 并发送
@@ -2464,6 +2567,13 @@ class RequestHandler {
       maxOutputTokens: openaiBody.max_tokens,
       stopSequences: openaiBody.stop,
     };
+    const rf = openaiBody.response_format;
+    if (rf && (rf.type === "json_object" || rf.type === "json_schema")) {
+      generationConfig.responseMimeType = "application/json";
+      const js = rf.json_schema && rf.json_schema.schema;
+      if (rf.type === "json_schema" && js && typeof js === "object") generationConfig.responseSchema = js;
+      this.logger.info(`[Adapter] response_format=${rf.type} -> JSON mode${generationConfig.responseSchema ? " + schema" : ""}`);
+    }
 
     const extraBody = openaiBody.extra_body || {};
     let rawThinkingConfig =

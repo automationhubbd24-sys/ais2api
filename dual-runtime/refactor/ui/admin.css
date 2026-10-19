@@ -1,0 +1,51 @@
+/* Refactored layout: account add tab, grouped settings, model rules, worker actions. */
+.worker-actions{display:flex;gap:8px;margin-top:14px}
+.worker-actions button{flex:1}
+#instance-ops .section-head{margin:0 0 12px}
+.add-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
+.add-col{display:grid;gap:20px;min-width:0}
+.add-col>.form-card,.settings-cards>.form-card,.model-rules>.form-card{margin-top:0}
+.model-rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start;margin-bottom:8px}
+.settings-group{margin-bottom:28px}
+.group-head{display:flex;align-items:center;gap:12px;margin:0 0 14px}
+.group-head h2{display:flex;align-items:center;gap:10px;margin:0;font-size:16px}
+.group-head p{margin:2px 0 0;font-size:12px}
+.group-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:var(--soft);color:var(--primary)}
+.settings-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
+/* Cards moved from /import keep their markup; map their classes onto the console theme. */
+.legacy h2{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 10px;margin:0 0 10px;font-size:15px}
+.legacy h2 .sub{font-weight:400}
+.legacy label.f{display:block;margin:12px 0 5px;color:var(--muted);font-size:12px}
+.legacy input:not([type=checkbox]):not([type=file]),.legacy select,.legacy textarea{width:100%}
+.legacy textarea{min-height:150px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--fg);font:12px/1.5 ui-monospace,monospace;resize:vertical;max-width:100%}
+.legacy input[type=file]{width:100%;font-size:13px}
+.legacy .row{display:flex;gap:8px}.legacy .row>*{flex:1;min-width:0}
+.legacy .btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.legacy .btns button{flex:1 1 auto}
+.legacy .chk{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px}
+.legacy .sw{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.legacy .sw b{font-size:15px}
+.legacy .sw input{appearance:none;width:44px;height:24px;min-height:0;padding:0;border:0;border-radius:99px;background:var(--border);position:relative;flex:none;margin:0;cursor:pointer}
+.legacy .sw input::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .15s}
+.legacy .sw input:checked{background:var(--primary)}.legacy .sw input:checked::after{left:23px}.legacy .sw input:disabled{opacity:.5}
+.legacy .sub{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.legacy pre.out{margin:12px 0 0;padding:10px;border-radius:8px;background:var(--inset);white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:260px;overflow:auto}
+.legacy pre.out:empty{display:none}
+.legacy .item{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border)}.legacy .item:first-child{border-top:0}
+.legacy .item div{flex:1;min-width:0}.legacy .item b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.legacy #wcode{font-size:24px;letter-spacing:2px}
+.legacy a,.legacy-dialog a{color:var(--primary)}
+.legacy ol.steps,.legacy-dialog ol.steps{margin:0;padding-left:20px}.legacy ol.steps li{margin:0 0 10px}
+.legacy code,.legacy-dialog code{padding:1px 6px;border-radius:6px;background:var(--inset);font-size:12px;word-break:break-all}
+.hint-box{margin:10px 0 0;padding:8px 10px;border-radius:8px;background:color-mix(in srgb,var(--warning) 12%,transparent);font-size:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:99px;background:var(--inset);color:var(--muted);font-size:11px;font-weight:500;white-space:nowrap}
+.chip i{width:7px;height:7px;border-radius:50%;background:var(--muted)}.chip.ok i{background:var(--success)}.chip.warn i{background:var(--warning)}.chip.bad i{background:var(--danger)}
+.legacy-dialog .dh{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}.legacy-dialog .dh b{font-size:16px}
+.legacy-dialog .db{padding:16px 20px}.legacy-dialog .db ol.steps li{margin:0 0 10px}
+.legacy-dialog label.f{display:block;margin:12px 0 5px;color:var(--muted);font-size:12px}.legacy-dialog input{width:100%}
+.legacy-dialog pre.out{margin:10px 0 0;white-space:pre-wrap;font-size:12px}.legacy-dialog pre.out:empty{display:none}
+.legacy-dialog .df{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--border)}.legacy-dialog .df button{flex:1}
+.legacy-dialog .x{border:0;background:none;box-shadow:none;font-size:22px;color:var(--muted)}
+.section-tabs>a{cursor:pointer}
+@media (max-width:1279px){.settings-cards,.model-rules{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:1023px){.add-grid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:639px){.add-grid,.add-col,.settings-cards,.model-rules{gap:14px}.settings-group{margin-bottom:22px}.legacy .btns button{min-height:42px}}

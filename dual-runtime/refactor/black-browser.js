@@ -118,7 +118,7 @@ class RequestProcessor {
   }
 
   execute(requestSpec, operationId) {
-    const IDLE_TIMEOUT_DURATION = 600000;
+    const IDLE_TIMEOUT_DURATION = 0; // 0 = no request time limit
     const abortController = new AbortController();
     this.activeOperations.set(operationId, abortController);
 
@@ -172,7 +172,7 @@ class RequestProcessor {
           }
           const isNetworkError = error.message.includes("Failed to fetch");
           const isRetryableServerError =
-            error.status && [500, 502, 503, 504].includes(error.status);
+            error.status && [500, 502, 503].includes(error.status); // 504 = upstream cut/timeout: fail fast, never retry
           if (
             isRetryableServerError &&
             !abortController.signal.aborted &&
@@ -194,7 +194,7 @@ class RequestProcessor {
 
     // Abort on deadline, but await the actual fetch settlement before completion.
     // A Promise.race timeout is not evidence that browser work has stopped.
-    timeoutId = setTimeout(() => abortController.abort(), IDLE_TIMEOUT_DURATION);
+    if (IDLE_TIMEOUT_DURATION > 0) timeoutId = setTimeout(() => abortController.abort(), IDLE_TIMEOUT_DURATION);
     const responsePromise = attemptPromise.catch((error) => {
       cancelTimeout();
       throw error;

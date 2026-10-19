@@ -11,6 +11,7 @@ function metrics(input){
  for(const k of ['firstByteMs','firstContentMs','durationMs'])out[k]=numeric(input[k]);
  for(const k of ['usageComplete','transportComplete','streamDoneSeen','applicationError','captureLimited','malformed'])out[k]=input[k]===true;
  out.timingSource='coordinator-response-observer';
+ if(typeof input.errorKind==='string'&&/^[A-Za-z0-9_]{1,40}$/.test(input.errorKind))out.errorKind=input.errorKind;
  const u=input.usage;
  out.usage=null;
  if(u&&['gemini','openai'].includes(u.format)){
@@ -22,7 +23,7 @@ function metrics(input){
   result.validCache=result.cached===null||result.input===null||result.cached<=result.input;
   out.usage=result;
  }
- out.usageComplete=out.usageComplete && out.transportComplete && !!out.usage && !out.applicationError && !out.captureLimited && !out.malformed;
+ out.usageComplete=out.usageComplete && (out.transportComplete || out.streamDoneSeen) && !!out.usage && !out.applicationError && !out.captureLimited && !out.malformed;
  return out;
 }
 function priceSnapshot(p){
@@ -111,6 +112,20 @@ class RequestHistory{
     httpStatus:Number.isInteger(input.httpStatus)&&input.httpStatus>=100&&input.httpStatus<=599?input.httpStatus:null,
     metrics:m,cost};
    await this.persist(row);return copy(row);
+  });
+ }
+ // Rows still pending long after any execution deadline can never finish (lost finish write,
+ // restart mid-request). Close them as uncertain so the console stops showing them as running.
+ expireStale(maxAgeMs=900000,now=this.clock()){
+  return this.enqueue(async()=>{
+   let n=0;
+   for(const old of [...this.rows.values()]){
+    if(old.phase!=='pending'||now-old.createdAt<maxAgeMs)continue;
+    await this.persist({...old,phase:'finished',outcome:'uncertain',finishedAt:now,httpStatus:null,
+     metrics:metrics({errorKind:'stale_pending'}),cost:{amount:null,currency:'USD',estimated:true,reason:'usage_incomplete'}});
+    n++;
+   }
+   return n;
   });
  }
  // Request counts per account/model for quota planning. Days follow Beijing time (UTC+8).

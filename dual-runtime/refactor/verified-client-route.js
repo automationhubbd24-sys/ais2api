@@ -1,7 +1,7 @@
 const crypto=require('crypto');
 const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
 const ORIGINAL='e166c3c9475c0a6f0b60b7a1cd445e6f302ae0a86218161a2dea2a5665224385';
-const REPLACEMENT='a67162fcc4ec924f3b6f550cd2a4b1817d524fa91b2505f6aa046ec7777371b0';
+const REPLACEMENT='50fb28a1c0a062dee2139e1be08ac765543486f30425dfc774f0228cec2397f4';
 const PREVIEW='3e1ed4e84cf3bbb02a3cc1026c98137c39c1218c169229e2496cc158e45b979d';
 // Only AI Studio app hosts; the script body hash decides whether it is replaced.
 const APP_HOST=/^ais-(dev|pre)-[a-z0-9]+-\d+\.[a-z0-9-]+\.run\.app$/;

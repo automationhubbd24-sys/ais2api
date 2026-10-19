@@ -21,9 +21,11 @@ async function main(){
  allowed.add('POST /api/proxies');
  allowed.add('POST /api/proxies/apply');
  allowed.add('GET /api/prices');
+ for(const r of ['GET /api/auth','POST /api/auth/password','POST /api/auth/keys','POST /api/auth/key','POST /api/auth/internal'])allowed.add(r);
  allowed.add('POST /api/prices');
  for(const name of require('./console-routes').assets)allowed.add('GET /console-assets/'+name);
  const outer=express();
+ require('./console-routes').installPublic(outer);
  // Userscript cookie sync: bearer key derived from the API key (never the API key itself).
  // Mounted before the browser-session/origin middleware because it does not use cookies.
  const syncKey=require('crypto').createHmac('sha256',String(system.config.apiKeys[0]||'')).update('ais2api-cookie-sync-v1').digest('hex');
@@ -243,8 +245,50 @@ require('./console-routes').install(dashboard);
   const r=await call('POST','/internal/sync-accounts',{});
   res.status(r.status).json(r.body);
  });
+ // Console password and client API keys (stored by the coordinator in console-auth.json).
+ const authRelay=(method,p,body)=>call(method,'/internal/console-auth'+p,body);
+ dashboard.get('/api/auth',async(req,res)=>{const r=await authRelay('GET','');res.status(r.status).json(r.body);});
+ for(const p of ['/password','/keys','/key','/internal'])dashboard.post('/api/auth'+p,async(req,res)=>{
+  const b=req.body&&typeof req.body==='object'?req.body:{};
+  const body=p==='/password'?{current:String(b.current||''),next:String(b.next||'')}:p==='/keys'?{name:String(b.name||'')}:
+   p==='/key'?{id:String(b.id||''),disabled:b.disabled===true,remove:b.remove===true}:{enabled:b.enabled===true};
+  const r=await authRelay('POST',p,body);res.status(r.status).json(r.body);
+ });
+ // Login throttle: 8 failures per IP per 10 minutes.
+ const failures=new Map();
+ const clientIp=req=>String(req.headers['x-real-ip']||req.socket.remoteAddress||'');
+ const throttled=ip=>{const f=failures.get(ip);if(!f)return false;if(Date.now()-f.at>600000){failures.delete(ip);return false;}return f.n>=8;};
+ const postLogin=express();postLogin.use(express.urlencoded({extended:false,limit:'4kb'}));
+ postLogin.post('/login',async(req,res)=>{
+  const ip=clientIp(req);if(throttled(ip))return res.redirect('/login?error=2');
+  const secret=String(req.body?.apiKey||'');
+  const r=secret?await authRelay('POST','/login',{secret}):{status:200,body:{ok:false}};
+  if(r.status===200&&r.body?.ok===true){failures.delete(ip);return req.session.regenerate(()=>{req.session.isAuthenticated=true;res.redirect('/');});}
+  if(r.status!==200)return res.redirect('/login?error=3');
+  const f=failures.get(ip)||{n:0,at:Date.now()};f.n++;f.at=Date.now();failures.set(ip,f);
+  res.redirect('/login?error=1');
+ });
+ const postIndex=router.stack.findIndex(layer=>layer.route?.path==='/login'&&layer.route.methods?.post);
+ if(postIndex<0)throw Error('Login route missing');
+ router.stack.splice(postIndex,0,...postLogin._router.stack.slice(-2));
+ // Themed login page (management only; workers keep the built-in page).
+ const loginIndex=router.stack.findIndex(layer=>layer.route?.path==='/login'&&layer.route.methods?.get);
+ if(loginIndex>=0){
+  const loginPage=require('fs').readFileSync(require('path').join(__dirname,'ui','login.html'),'utf8');
+  const lh=express();
+  lh.get('/login',(req,res)=>{
+   if(req.session?.isAuthenticated)return res.redirect('/');
+   res.setHeader('Cache-Control','no-store');
+   const msg={'1':'密码错误，请重新输入','2':'尝试次数过多，请 10 分钟后再试','3':'调度服务暂不可用，请稍后再试'}[String(req.query.error||'')];
+   res.type('html').send(loginPage.replace('<!--ERROR-->',msg?'<p class="error" role="alert">'+msg+'</p>':''));
+  });
+  router.stack.splice(loginIndex,0,lh._router.stack[lh._router.stack.length-1]);
+ }
  const holder=express();holder.use(dashboard);
- router.stack.splice(index,0,holder._router.stack[holder._router.stack.length-1]);
+ // Recompute: the themed login route above shifted the stack.
+ const dashIndex=router.stack.findIndex(layer=>layer.route?.path==='/');
+ if(dashIndex<0)throw Error('Dashboard route missing');
+ router.stack.splice(dashIndex,0,holder._router.stack[holder._router.stack.length-1]);
  outer.use(app);
  const server=http.createServer(outer);
  server.requestTimeout=30000;server.headersTimeout=15000;

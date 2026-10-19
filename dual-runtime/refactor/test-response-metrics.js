@@ -60,3 +60,31 @@ test('finish is idempotent and never retains response text',()=>{
  const a=r.finish();r.write('ignored');
  assert.deepEqual(r.finish(),a);assert.equal(r.buffer,'');assert.deepEqual(r.event,[]);
 });
+
+test('stream usage after [DONE] counts even if the socket closes abruptly',()=>{
+ const r=new R({stream:true});
+ r.write('data: {"usage":{"prompt_tokens":10,"completion_tokens":2}}\n\ndata: [DONE]\n\n');
+ const m=r.finish({complete:false});
+ assert.equal(m.usageComplete,true);assert.equal(m.transportComplete,false);
+});
+
+test('SSE body without event-stream content type is still parsed',()=>{
+ const r=new R();
+ r.write('data: {"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}\n\ndata: [DONE]\n\n');
+ const m=r.finish();
+ assert.equal(m.malformed,false);assert.equal(m.streamDoneSeen,true);
+ assert.equal(m.usage.total,10);assert.equal(m.usageComplete,true);
+});
+test('bare [DONE] without content type is not malformed',()=>{
+ const r=new R();r.write('data: [DONE]\n\n');
+ const m=r.finish();assert.equal(m.malformed,false);assert.equal(m.usageComplete,false);
+});
+
+test('upstream error category is kept without message text', () => {
+  const r = new R();
+  r.write(JSON.stringify({error: {code: 400, message: 'secret user text', status: 'INVALID_ARGUMENT'}}));
+  const m = r.finish();
+  assert.equal(m.applicationError, true);
+  assert.equal(m.errorKind, 'INVALID_ARGUMENT');
+  assert.equal(JSON.stringify(m).includes('secret'), false);
+});

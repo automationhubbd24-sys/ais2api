@@ -6,7 +6,7 @@ const {WorkerDriver}=require('./worker-driver');
 const {RotationController}=require('./rotation-controller');
 const {RequestScheduler}=require('./request-scheduler');
 const {forwardWorker}=require('./forward-worker');
-const {createServer}=require('./coordinator-http');
+const {createServer,sanitizeStats}=require('./coordinator-http');
 const {authFileInfo}=require('./auth-maintenance');
 async function main(){
  const root=process.env.DUAL_ROOT||'/opt/ais2api/dual-runtime';
@@ -21,7 +21,9 @@ async function main(){
  if(!history.status().ready)console.error('[Analytics] history unavailable; generation remains enabled');
  const {ModelPriceStore}=require('./model-price-store');
  const priceStore=new ModelPriceStore(path.join(root,'model-prices.json'));
- const recordedForward=createRecordedForward({history,forward:forwardWorker,priceFor:model=>priceStore.get(model)});
+ const sweepStale=()=>{if(history.status().ready&&typeof history.expireStale==='function')history.expireStale().then(n=>{if(n)console.warn('[Analytics] closed '+n+' stale pending request(s) as uncertain');}).catch(()=>{});};
+ sweepStale();setInterval(sweepStale,300000).unref();
+ const recordedForward=createRecordedForward({history,forward:forwardWorker,priceFor:model=>priceStore.get(model),missLog:require('path').join(__dirname,'..','usage-missing.jsonl')});
  const scheduler=new RequestScheduler(dispatch,client,recordedForward,cfg.workers);
  const {QuarantineRecovery}=require('./quarantine-recovery');
  const recovery=new QuarantineRecovery(dispatch,scheduler,client,driver,rotation);
@@ -51,7 +53,21 @@ async function main(){
  rotation.onRetired=(slot,marker)=>cleanup.record(slot,marker);
  const {CoordinatorMonitor}=require('./coordinator-monitor');
  const monitor=new CoordinatorMonitor({dispatch,client,catalogs,recovery,rotation,routing,scheduler});
- let lastMode='unknown';
+ const {ConsoleAuth,StreamMode}=require('./console-auth');
+ const consoleAuth=new ConsoleAuth({file:path.join(root,'console-auth.json'),internalKey:cfg.apiKeys[0]});
+ // Persisted streaming mode (default fake). Re-applied whenever a slot reports a new worker epoch.
+ const streamMode=new StreamMode(path.join(root,'stream-mode.json'));
+ let lastMode=streamMode.mode;
+ let applyingMode=false;
+ const applyMode=async()=>{
+  if(applyingMode)return;applyingMode=true;
+  try{for(const slot of ['A','B']){
+   const s=dispatch.slots.get(slot),epoch=s?.workerEpoch;
+   if(!epoch||streamMode.applied.get(slot)===epoch+':'+streamMode.mode)continue;
+   try{await client.setMode(slot,streamMode.mode);streamMode.applied.set(slot,epoch+':'+streamMode.mode);console.log('[StreamMode] slot',slot,'->',streamMode.mode);}
+   catch{}
+  }}finally{applyingMode=false;}
+ };
  const accountOccupied=id=>dispatch.pool.owners.has(id)||[...dispatch.slots.values()].some(s=>
   [s.rotation?.account,s.rotation?.oldAccount,s.rotation?.predecessorAccount,s.recovery?.account,s.proxyApply?.account].includes(id)||
   Object.values(s.executions||{}).some(x=>x.account===id)||Object.values(s.retirements||{}).some(x=>x.account===id));
@@ -70,6 +86,7 @@ async function main(){
   halted:dispatch.halted,queue:scheduler.queue.length,scheduling:scheduler.status(),
   streamingMode:lastMode,ultra:tiers.status(dispatch.pool.ids),rotationThrottle:{...dispatch.rotationThrottle,intervalMs:300000},browserLease:browserLease?browserLease.status():null,runMode:browserLease?browserLease.modeStatus():null,
   analytics:recordedForward.status(),
+  gatewayRepair:{...sanitizeStats},
   retiredCleanup:cleanup.status(),
   quotaMode:"per-account-per-model",quotaLimits:require('./model-quota-ledger').TIER_LIMITS,
   slots:Object.fromEntries([...dispatch.slots].map(([slot,s])=>[slot,{
@@ -212,12 +229,12 @@ async function main(){
    return catalogs.start(slot);
   },
   async setMode(mode){
-   const results={};
+   const results={};streamMode.set(mode);
    for(const slot of ['A','B']){
-    try{await client.setMode(slot,mode);results[slot]='ok';}
+    try{await client.setMode(slot,mode);results[slot]='ok';const e=dispatch.slots.get(slot)?.workerEpoch;if(e)streamMode.applied.set(slot,e+':'+mode);}
     catch(error){results[slot]=String(error.message||error);}
    }
-   if(results.A==='ok'||results.B==='ok')lastMode=mode;
+   lastMode=mode;
    return {mode,results};
   },
   async rotate(slot,targetAccount){
@@ -269,17 +286,18 @@ async function main(){
    return {added,removed,pool:dispatch.pool.ids};
   }
  };
- const server=createServer({keys:cfg.apiKeys,models:()=>routing.list(),scheduler,status,actions});
+ const server=createServer({keys:cfg.apiKeys,models:()=>routing.list(),scheduler,status,actions,auth:consoleAuth});
  await new Promise((resolve,reject)=>{
   server.once('error',reject);server.listen(8890,'127.0.0.1',resolve);
  });
  const authTimer=setInterval(()=>{actions.syncAccounts().then(r=>{if(r.added?.length)console.log('[Accounts] synced',r.added.join(','));}).catch(()=>{});},60000);authTimer.unref();
- const timer=setInterval(()=>monitor.tick(),2000);
+ const haltTimer=setInterval(()=>{if(!stopping&&dispatch.halted&&dispatch.tryResume())console.warn('[Coordinator] state checkpoint succeeded again; dispatch resumed');},30000);haltTimer.unref();
+ const timer=setInterval(()=>{monitor.tick();applyMode().catch(()=>{});},2000);
  const modeTimer=setInterval(()=>browserLease.tick(),5000);modeTimer.unref();
  const cleanupTimer=setInterval(()=>cleanup.tick(),60000);cleanupTimer.unref();
  console.log('[Coordinator] loopback 8890; protocol v2; per-slot concurrency 2; explicit model quotas');
  async function shutdown(){
-  if(stopping)return;stopping=true;clearInterval(timer);clearInterval(authTimer);clearInterval(cleanupTimer);cleanup.close();monitor.close();scheduler.close();
+  if(stopping)return;stopping=true;clearInterval(timer);clearInterval(haltTimer);clearInterval(authTimer);clearInterval(cleanupTimer);cleanup.close();monitor.close();scheduler.close();
   server.close();
   const deadline=Date.now()+620000;
   while(Date.now()<deadline && ([...dispatch.slots.values()].some(s=>s.active>0||Object.keys(s.retirements||{}).length>0)||[...rotation.running].some(slot=>!dispatch.slots.get(slot).proxyApply)||catalogs.jobs.size||proxies.jobs.size)){

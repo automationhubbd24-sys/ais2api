@@ -1,0 +1,4 @@
+console-auth.json
+stream-mode.json
+**/console-auth.json
+**/stream-mode.json
