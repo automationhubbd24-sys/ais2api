@@ -76,15 +76,7 @@ function forwardWorker(ticket,route,body,res,credentials,options={}){
    if(ended)return;
    finish({uncertain:true});upstreamReply?.destroy();upstream.destroy();
   };
-  const timer=setTimeout(()=>{
-   finish({uncertain:true});
-   upstream.destroy();
-   if(res.destroyed===false){
-    if(res.headersSent===false){res.statusCode=504;res.end('Worker request timeout');}
-    else res.destroy();
-   }
-   finish({uncertain:true});
-  },600000);
+  const timer=null; // no request time limit
   res.on('close',disconnect);
   options.signal?.addEventListener('abort',cancel,{once:true});
   upstream.on('error',()=>{

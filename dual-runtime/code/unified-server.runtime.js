@@ -550,7 +550,7 @@ return window.__tb?'ok':'wait';})()`;
             await gcbInstall();
             const gcbT0 = Date.now();
             const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ',' + JSON.stringify(gcbKey) + ',' + JSON.stringify(gcbHx) + ')';
-            const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise((_, rj) => setTimeout(() => rj(new Error('GenerateContent timeout')), 600000))]);
+            const raw = await pg.evaluate(c => window.wrappedJSObject.eval(c), code); // no request time limit
             const r = JSON.parse(raw);
             if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
             const arr0 = JSON.parse(r.t); const isChunk = x => Array.isArray(x) && Array.isArray(x[0]) && Array.isArray(x[0][0]) && Array.isArray(x[0][0][0]) && x[0][0][0][1] === 'model'; const arr = Array.isArray(arr0) && arr0.some(isChunk) ? arr0 : (Array.isArray(arr0) && Array.isArray(arr0[0]) ? arr0[0] : []);
@@ -1081,7 +1081,7 @@ class LoggingService {
 }
 
 class MessageQueue extends EventEmitter {
-  constructor(timeoutMs = 600000) {
+  constructor(timeoutMs = 0) {
     super();
     this.messages = [];
     this.waitingResolvers = [];
@@ -1109,7 +1109,7 @@ class MessageQueue extends EventEmitter {
       }
       const resolver = { resolve, reject };
       this.waitingResolvers.push(resolver);
-      const timeoutId = setTimeout(() => {
+      const timeoutId = timeoutMs > 0 && setTimeout(() => {
         const index = this.waitingResolvers.indexOf(resolver);
         if (index !== -1) {
           this.waitingResolvers.splice(index, 1);
@@ -1714,7 +1714,7 @@ class RequestHandler {
           const streamState = { inThought: false };
 
           while (true) {
-            const message = await messageQueue.dequeue(300000); // 5分钟超时
+            const message = await messageQueue.dequeue(); // 5分钟超时
             if (message.type === "STREAM_END") {
               if (streamState.inThought) {
                 const closeThoughtPayload = {
@@ -1753,7 +1753,7 @@ class RequestHandler {
 
           let fullBody = "";
           while (true) {
-            const message = await messageQueue.dequeue(300000);
+            const message = await messageQueue.dequeue();
             if (message.type === "STREAM_END") break;
             if (message.data) fullBody += message.data;
           }
@@ -1774,7 +1774,7 @@ class RequestHandler {
       } else {
         let fullBody = "";
         while (true) {
-          const message = await messageQueue.dequeue(300000);
+          const message = await messageQueue.dequeue();
           if (message.type === "STREAM_END") {
             break;
           }
@@ -1954,6 +1954,8 @@ class RequestHandler {
       const cat = this.serverSystem && this.serverSystem.modelCatalog;
       const snap = cat && typeof cat.status === 'function' ? cat.status().snapshot : null;
       const m = snap && Array.isArray(snap.models) ? snap.models.find(x => x.id === model) : null;
+      const OVERRIDE = { 'gemini-4-argon': 65536 }; // Google lists 32768 but accepts 65536
+      if (OVERRIDE[model]) return OVERRIDE[model];
       return m && Number.isSafeInteger(m.outputTokenLimit) && m.outputTokenLimit > 0 ? m.outputTokenLimit : null;
     } catch { return null; }
   }
@@ -2021,17 +2023,7 @@ class RequestHandler {
         }
         this._forwardRequest(proxyRequest);
         try {
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    "Response from browser timed out after 300 seconds",
-                  ),
-                ),
-              300000,
-            ),
-          );
+          const timeoutPromise = new Promise(() => {}); // no request time limit
           lastMessage = await Promise.race([
             messageQueue.dequeue(),
             timeoutPromise,
@@ -2236,7 +2228,7 @@ class RequestHandler {
       // 2. 准备一个缓冲区，并确保循环等待直到收到结束信号
       let fullBody = "";
       while (true) {
-        const message = await messageQueue.dequeue(300000);
+        const message = await messageQueue.dequeue();
         if (message.type === "STREAM_END") {
           this.logger.info("[Request] 收到结束信号，数据接收完毕。");
           break;
@@ -2380,14 +2372,14 @@ class RequestHandler {
           is_generative: true,
           streaming_mode: "fake",
         });
-        const headerMsg = await contQueue.dequeue(300000);
+        const headerMsg = await contQueue.dequeue();
         if (headerMsg.event_type === "error") {
           this.logger.warn("[AT] continuation error: " + (headerMsg.message || "").slice(0, 200));
           return null;
         }
         let contFull = "";
         while (true) {
-          const m = await contQueue.dequeue(300000);
+          const m = await contQueue.dequeue();
           if (m.type === "STREAM_END") break;
           if (m.event_type === "chunk" && m.data) contFull += m.data;
         }
