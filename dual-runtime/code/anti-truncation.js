@@ -4,6 +4,8 @@
 const AT_PREFIX = "anti-truncation/";
 const AT_TOOL_NAME = "emit_answer";
 const AT_MAX_ATTEMPTS = 3;
+// After this much time since the request arrived, an unfinished round fails instead of continuing.
+const AT_CONTINUE_DEADLINE_MS = 360000;
 const AT_SYSTEM_HINT =
   "\n\n[SYSTEM CONSTRAINT] You have a tool named emit_answer. " +
   "When you are ready to output your final complete answer, you MUST call " +
@@ -101,7 +103,10 @@ function atBlockMessage(info) {
 // Upstream ended the generation early (finish=OTHER etc.) without emit_answer. Nothing is returned
 // to the client; the error carries the finish reason and token counts so the request record shows why.
 function atFinishPayload(info, httpStatus) {
-  const payload = { error: { code: httpStatus, type: 'upstream_incomplete', status: 'FINISH_' + info.reason,
+  const payload = info.timeLimit
+    ? { error: { code: httpStatus, type: 'upstream_incomplete', status: 'AT_TIME_LIMIT',
+      message: '已用时约 ' + Math.round(info.elapsedMs / 60000) + ' 分钟仍未得到完整答案（finish=' + info.reason + '），超过 6 分钟不再续写，直接返回失败。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } }
+    : { error: { code: httpStatus, type: 'upstream_incomplete', status: 'FINISH_' + info.reason,
     message: '上游中途结束（finish=' + info.reason + '），未返回内容。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } };
   if (info.promptTokens !== null || info.outputTokens !== null) payload.usage = { prompt_tokens: info.promptTokens, completion_tokens: info.outputTokens };
   return payload;
@@ -112,7 +117,7 @@ function atBlockPayload(info, httpStatus) {
   return payload;
 }
 module.exports = {
-  AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS,
+  AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, AT_CONTINUE_DEADLINE_MS,
   atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody,
   atBlockInfo, atBlockMessage, atBlockPayload, atFinishPayload,
 };

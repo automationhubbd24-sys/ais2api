@@ -13,6 +13,8 @@ const AT = (function () {
 const AT_PREFIX = "anti-truncation/";
 const AT_TOOL_NAME = "emit_answer";
 const AT_MAX_ATTEMPTS = 3;
+// After this much time since the request arrived, an unfinished round fails instead of continuing.
+const AT_CONTINUE_DEADLINE_MS = 360000;
 const AT_SYSTEM_HINT =
   "\n\n[SYSTEM CONSTRAINT] You have a tool named emit_answer. " +
   "When you are ready to output your final complete answer, you MUST call " +
@@ -130,7 +132,10 @@ function atBlockMessage(info) {
 // Upstream ended the generation early (finish=OTHER etc.) without emit_answer. Nothing is returned
 // to the client; the error carries the finish reason and token counts so the request record shows why.
 function atFinishPayload(info, httpStatus) {
-  const payload = { error: { code: httpStatus, type: 'upstream_incomplete', status: 'FINISH_' + info.reason,
+  const payload = info.timeLimit
+    ? { error: { code: httpStatus, type: 'upstream_incomplete', status: 'AT_TIME_LIMIT',
+      message: '已用时约 ' + Math.round(info.elapsedMs / 60000) + ' 分钟仍未得到完整答案（finish=' + info.reason + '），超过 6 分钟不再续写，直接返回失败。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } }
+    : { error: { code: httpStatus, type: 'upstream_incomplete', status: 'FINISH_' + info.reason,
     message: '上游中途结束（finish=' + info.reason + '），未返回内容。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } };
   if (info.promptTokens !== null || info.outputTokens !== null) payload.usage = { prompt_tokens: info.promptTokens, completion_tokens: info.outputTokens };
   return payload;
@@ -140,7 +145,7 @@ function atBlockPayload(info, httpStatus) {
   if (info.promptTokens !== null) payload.usage = { prompt_tokens: info.promptTokens };
   return payload;
 }
-  return { AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, fixTrailingModelTurn, atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody, atBlockInfo, atBlockMessage, atBlockPayload, atFinishPayload };
+  return { AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, AT_CONTINUE_DEADLINE_MS, fixTrailingModelTurn, atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody, atBlockInfo, atBlockMessage, atBlockPayload, atFinishPayload };
 })();
 
 // ===================================================================================
@@ -1606,6 +1611,7 @@ class RequestHandler {
       this.browserManager.notifyUserActivity();
     }
     const requestId = this._generateRequestId();
+    const atRequestStartedAt = Date.now();
     const isOpenAIStream = req.body.stream === true;
     let proxyRequestModel = null;
     const model = req.body.model || "gemini-2.5-flash";
@@ -1751,7 +1757,7 @@ class RequestHandler {
             if (message.data) fullBody += message.data;
           }
 
-          if (AT.atIsEnabled(model)) { const result = await this._atContinueUntilAnswer(JSON.parse(fullBody), googleBody, res, model, requestId); if (!result || typeof result.answer !== /string/.source) throw Object.assign(Error(/AT_incomplete_stream_answer/.source),{status:502}); fullBody = JSON.stringify({candidates:[{content:{role:/model/.source,parts:[{text:result.answer}]},finishReason:result.finishReason}],...(result.usageMetadata?{usageMetadata:result.usageMetadata}:{})}); }
+          if (AT.atIsEnabled(model)) { const result = await this._atContinueUntilAnswer(JSON.parse(fullBody), googleBody, res, model, requestId, atRequestStartedAt); if (!result || typeof result.answer !== /string/.source) throw Object.assign(Error(/AT_incomplete_stream_answer/.source),{status:502}); fullBody = JSON.stringify({candidates:[{content:{role:/model/.source,parts:[{text:result.answer}]},finishReason:result.finishReason}],...(result.usageMetadata?{usageMetadata:result.usageMetadata}:{})}); }
           const translatedChunk = this._translateGoogleToOpenAIStream(
             fullBody,
             model,
@@ -1781,7 +1787,7 @@ class RequestHandler {
         let atAnswer = null;
         if (atEnabledLocal) {
           const atResult = await this._atContinueUntilAnswer(
-            googleResponse, googleBody, res, model, requestId,
+            googleResponse, googleBody, res, model, requestId, atRequestStartedAt,
           );
           if (atResult && typeof atResult.answer === "string") {
             atAnswer = atResult.answer;
@@ -2283,7 +2289,7 @@ class RequestHandler {
     }
   }
 
-  async _atContinueUntilAnswer(googleResponse, googleBody, res, model, requestId) {
+  async _atContinueUntilAnswer(googleResponse, googleBody, res, model, requestId, startedAt = Date.now()) {
     const atRealModelName = AT.atRealModel(model);
     let previousOperationId = requestId;
     let attempt = 0;
@@ -2327,6 +2333,7 @@ class RequestHandler {
       }
       if (attempt > AT.AT_MAX_ATTEMPTS) break;
       if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) { this.logger.warn('[AT] giving up: finish=' + r.finishReason + ' on round ' + attempt); const atBlock = AT.atBlockInfo(current); if (atBlock) { if (attempt > 1) atBlock.promptTokens = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount) ? atUsage.sum.promptTokenCount : null; this.logger.warn('[AT] content blocked by upstream: reason=' + atBlock.reason + ' stage=' + atBlock.stage + ' round=' + attempt + ' promptTokens=' + (atBlock.promptTokens ?? '-')); throw Object.assign(Error('AT_content_blocked'), {status: 502, atBlock}); } { const c0 = current && current.candidates && current.candidates[0]; let chars = 0; for (const p of ((c0 && c0.content && c0.content.parts) || [])) if (p && typeof p.text === 'string' && !p.thought) chars += p.text.length; const ok = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount); const atFinish = { reason: String(r.finishReason).slice(0, 40).replace(/[^A-Z0-9_]/gi, '_'), round: attempt, chars, promptTokens: ok ? atUsage.sum.promptTokenCount : null, outputTokens: ok && Number.isSafeInteger(atUsage.sum.candidatesTokenCount) ? atUsage.sum.candidatesTokenCount : null }; this.logger.warn('[AT] upstream ended early: finish=' + atFinish.reason + ' round=' + attempt + ' chars=' + chars + ' tok(in/out)=' + (atFinish.promptTokens ?? '-') + '/' + (atFinish.outputTokens ?? '-') + ' ms=' + (roundStartedAt ? Date.now() - roundStartedAt : '-') + '; not continued, nothing returned'); throw Object.assign(Error('AT_upstream_finish_' + atFinish.reason), {status: 502, atFinish}); } }
+      { const elapsed = Date.now() - startedAt; if (elapsed >= AT.AT_CONTINUE_DEADLINE_MS) { const c0 = current && current.candidates && current.candidates[0]; let chars = 0; for (const p of ((c0 && c0.content && c0.content.parts) || [])) if (p && typeof p.text === 'string' && !p.thought) chars += p.text.length; const ok = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount); const atFinish = { reason: String(r.finishReason || 'NO_ANSWER').slice(0, 40).replace(/[^A-Z0-9_]/gi, '_'), round: attempt, chars, elapsedMs: elapsed, timeLimit: true, promptTokens: ok ? atUsage.sum.promptTokenCount : null, outputTokens: ok && Number.isSafeInteger(atUsage.sum.candidatesTokenCount) ? atUsage.sum.candidatesTokenCount : null }; this.logger.warn('[AT] not continuing: elapsed=' + elapsed + 'ms >= ' + AT.AT_CONTINUE_DEADLINE_MS + 'ms, finish=' + atFinish.reason + ' round=' + attempt + ' chars=' + chars + ' tok(in/out)=' + (atFinish.promptTokens ?? '-') + '/' + (atFinish.outputTokens ?? '-')); throw Object.assign(Error('AT_continue_deadline'), {status: 502, atFinish}); } }
       this.logger.info('[AT] continuing because ' + (r.found ? 'emit_answer finish=' + r.finishReason : 'no emit_answer (finish=' + (r.finishReason || '-') + ')'));
       lastAnswer = r.answer || lastAnswer;
       if (typeof this._atWaitOperationDone !== /function/.source) throw Error(/AT_cleanup_hook_missing/.source);
