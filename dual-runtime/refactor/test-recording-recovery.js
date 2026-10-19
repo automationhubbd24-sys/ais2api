@@ -60,3 +60,19 @@ test('anti-truncation stops continuing after 6 minutes and fails with AT_TIME_LI
  assert.equal(await mk()._atContinueUntilAnswer(round,{contents:[]},res,'anti-truncation/x','r',Date.now()-60000),null);
  assert.equal(forwarded,1);
 });
+test('maxOutputTokens is pinned to the model upstream limit and client values are ignored',()=>{
+ const fs=require('fs');const src=fs.readFileSync(path.join(__dirname,'..','code','unified-server.runtime.js'),'utf8');
+ const s=src.indexOf('  _modelOutputLimit(model) {');const e=src.indexOf('  _forwardRequest(proxyRequest) {',s);
+ const obj=new Function('return (class {'+src.slice(s,e)+'}).prototype;')();
+ const logs=[];const h=Object.assign(Object.create(obj),{logger:{info:m=>logs.push(m)},serverSystem:{modelCatalog:{status:()=>({snapshot:{models:[{id:'gemini-4-argon',methods:['generateContent'],outputTokenLimit:65536}]}})}}});
+ const req=(model,body,ep='generateContent')=>({path:'/v1beta/models/'+model+':'+ep,body:JSON.stringify(body)});
+ let r=req('gemini-4-argon',{contents:[],generationConfig:{maxOutputTokens:30000,temperature:1}});h._pinMaxOutputTokens(r);
+ assert.deepEqual(JSON.parse(r.body).generationConfig,{maxOutputTokens:65536,temperature:1});
+ r=req('gemini-4-argon',{contents:[],generation_config:{max_output_tokens:100}},'streamGenerateContent');h._pinMaxOutputTokens(r);
+ assert.equal(JSON.parse(r.body).generation_config.maxOutputTokens,65536);assert.equal(JSON.parse(r.body).generation_config.max_output_tokens,undefined);
+ r=req('gemini-4-argon',{contents:[]});h._pinMaxOutputTokens(r);assert.equal(JSON.parse(r.body).generationConfig.maxOutputTokens,65536);
+ r=req('unknown-model',{contents:[],generationConfig:{maxOutputTokens:30000}});h._pinMaxOutputTokens(r);
+ assert.equal(JSON.parse(r.body).generationConfig.maxOutputTokens,undefined);
+ r={path:'/v1beta/models',body:''};h._pinMaxOutputTokens(r);assert.equal(r.body,'');
+ assert(logs.some(m=>m.includes('client=30000 -> 65536')));
+});

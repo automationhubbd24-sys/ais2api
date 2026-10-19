@@ -1947,7 +1947,31 @@ class RequestHandler {
       streaming_mode: this.serverSystem.streamingMode,
     };
   }
+  // maxOutputTokens is always the model's own upstream cap; any client value is ignored.
+  _modelOutputLimit(model) {
+    try {
+      const cat = this.serverSystem && this.serverSystem.modelCatalog;
+      const snap = cat && typeof cat.status === 'function' ? cat.status().snapshot : null;
+      const m = snap && Array.isArray(snap.models) ? snap.models.find(x => x.id === model) : null;
+      return m && Number.isSafeInteger(m.outputTokenLimit) && m.outputTokenLimit > 0 ? m.outputTokenLimit : null;
+    } catch { return null; }
+  }
+  _pinMaxOutputTokens(proxyRequest) {
+    const mm = proxyRequest && typeof proxyRequest.path === 'string' && proxyRequest.path.match(/^\/v1beta\/models\/([^:/?]+):(?:generateContent|streamGenerateContent)$/);
+    if (!mm || typeof proxyRequest.body !== 'string' || !proxyRequest.body) return;
+    let body; try { body = JSON.parse(proxyRequest.body); } catch { return; }
+    if (!body || typeof body !== 'object') return;
+    const gc = body.generationConfig && typeof body.generationConfig === 'object' ? body.generationConfig : (body.generation_config && typeof body.generation_config === 'object' ? body.generation_config : null);
+    const before = gc ? (gc.maxOutputTokens ?? gc.max_output_tokens) : undefined;
+    const limit = this._modelOutputLimit(mm[1]);
+    const cfg = gc || (body.generationConfig = {});
+    delete cfg.max_output_tokens;
+    if (limit) cfg.maxOutputTokens = limit; else delete cfg.maxOutputTokens;
+    if (before !== cfg.maxOutputTokens) this.logger.info('[MaxTokens] ' + mm[1] + ' client=' + (before ?? '-') + ' -> ' + (limit ?? 'default'));
+    proxyRequest.body = JSON.stringify(body);
+  }
   _forwardRequest(proxyRequest) {
+    this._pinMaxOutputTokens(proxyRequest);
     const connection = this.connectionRegistry.getFirstConnection();
     if (connection) {
       connection.send(JSON.stringify(proxyRequest));
