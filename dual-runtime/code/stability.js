@@ -76,6 +76,7 @@ function install(h){
  h._handleRequestFailureAndSwitch=async function(error){
   const status=Number(error.status)||500;
   if(/abort/i.test(error.message||""))return;
+  if(/UPSTREAM_CUT|UPSTREAM_NO_RESPONSE|UPSTREAM_CONNECTION_LOST/.test(String(error.message||""))){this.logger.warn("[Stability] 上游中途断开/无响应；不冷却账号或模型");return;}
   if(/region not supported|not available in your (?:country|region)|user location is not supported/i.test(String(error.message||"")+String(error.body||""))){
    this.logger.warn("[Stability] 账号 #"+this.currentAuthIndex+" 出口地区被拒绝；不冷却账号");
    return;

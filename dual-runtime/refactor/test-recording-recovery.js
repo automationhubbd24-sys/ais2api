@@ -76,3 +76,23 @@ test('maxOutputTokens is pinned to the model upstream limit and client values ar
  r={path:'/v1beta/models',body:''};h._pinMaxOutputTokens(r);assert.equal(r.body,'');
  assert(logs.some(m=>m.includes('client=30000 -> 65536')));
 });
+
+test('Google cut-off (no finishReason) fails fast as 504 and is never retried or cooled down', () => {
+  const fs = require('fs'); const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '../code/unified-server.runtime.js'), 'utf8');
+  assert.ok(src.includes("window.__gcCall.v!==4") && src.includes('window.__gcCall.v=4;'));
+  assert.ok(src.includes('signal:ac.signal') && src.includes("hx.hardMs||660000"));
+  assert.ok(src.includes("status: 'UPSTREAM_CUT'") && src.includes('upstream cut: no finishReason'));
+  assert.ok(src.includes('GCB_HARD_MS + 30000'));
+  const bb = fs.readFileSync(path.join(__dirname, 'black-browser.js'), 'utf8');
+  assert.ok(bb.includes('[500, 502, 503].includes(error.status)') && !bb.includes('[500, 502, 503, 504].includes(error.status)'));
+  const st = fs.readFileSync(path.join(__dirname, '../code/stability.js'), 'utf8');
+  assert.ok(/UPSTREAM_CUT\|UPSTREAM_NO_RESPONSE\|UPSTREAM_CONNECTION_LOST/.test(st));
+  // the in-page script really aborts and reports 504 when fetch never settles
+  const a = src.indexOf("var ac=new AbortController()"); const b = src.indexOf("finally{clearTimeout(wd);}", a) + 'finally{clearTimeout(wd);}'.length;
+  const fn = new Function('fetch', 'base', 'hd', 'body', 'hx', 'tier', 'return (async()=>{' + src.slice(a, b) + "return JSON.stringify({s:r.status,t:tx});})();");
+  const hang = (u, o) => new Promise((_, rj) => o.signal.addEventListener('abort', () => rj(Object.assign(Error('aborted'), {name: 'AbortError'}))));
+  return fn(hang, 'x', {}, [], {hardMs: 30}, null).then(out => { const o = JSON.parse(out); assert.equal(o.s, 504); assert.equal(JSON.parse(o.t).error.status, 'UPSTREAM_NO_RESPONSE'); })
+    .then(() => fn(() => Promise.reject(Error('NetworkError when attempting to fetch resource.')), 'x', {}, [], {hardMs: 1000}, null)).then(out => { const o = JSON.parse(out); assert.equal(o.s, 504); assert.equal(JSON.parse(o.t).error.status, 'UPSTREAM_CONNECTION_LOST'); })
+    .then(() => fn(async () => ({status: 200, text: async () => 'ok'}), 'x', {}, [], {hardMs: 1000}, null)).then(out => assert.deepEqual(JSON.parse(out), {s: 200, t: 'ok'}));
+});

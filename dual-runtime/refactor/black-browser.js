@@ -172,7 +172,7 @@ class RequestProcessor {
           }
           const isNetworkError = error.message.includes("Failed to fetch");
           const isRetryableServerError =
-            error.status && [500, 502, 503, 504].includes(error.status);
+            error.status && [500, 502, 503].includes(error.status); // 504 = upstream cut/timeout: fail fast, never retry
           if (
             isRetryableServerError &&
             !abortController.signal.aborted &&
