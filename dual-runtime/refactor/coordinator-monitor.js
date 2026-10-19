@@ -19,6 +19,7 @@ class CoordinatorMonitor {
     if (this.closed || this.dispatch.halted) return;
     for (const slot of this.dispatch.slots.keys()) {
       if (this.running.has(slot)) continue;
+      this.expireFailure(slot);
       const task = this.poll(slot).catch(() => {
         const state = this.dispatch.slots.get(slot);
         state.ready = false;
@@ -34,6 +35,15 @@ class CoordinatorMonitor {
       this.running.set(slot, task);
     }
     this.scheduler.pump();
+  }
+  // A failure with no pending rotation/recovery marker has nothing left to
+  // reconcile; keeping it would block health probes for that slot forever.
+  expireFailure(slot) {
+    const d = this.dispatch, f = this.rotation.failures?.get(slot), st = d.slots.get(slot), ow = d.pool.slots.get(slot);
+    if (!f || ow?.pending || st?.rotation || st?.recovery || this.rotation.running?.has(slot) || d.operations?.has(slot)) return;
+    if (Date.now() < (f.retryAt || 0) + 60000) return;
+    this.rotation.failures.delete(slot);
+    console.warn('[Monitor] cleared stale failure on ' + slot);
   }
   async poll(slot) {
     const d = this.dispatch, state = d.slots.get(slot);

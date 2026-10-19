@@ -23,6 +23,8 @@ function createRecordedForward({history,forward,priceFor=()=>void 0,clock=Date.n
  // A slow write pauses recording only until that write actually settles; then recording
  // resumes on its own. A write that never settles keeps it paused (no queue growth).
  const record=async work=>{
+  // A write that never settles pauses at most 5 minutes; the next slow write re-pauses.
+  if(health.recordingPaused&&clock()-health.pausedAt>=300000){health.recordingPaused=false;health.resumedAt=clock();}
   if(health.recordingPaused)throw Error('History recording paused');
   const op=Promise.resolve().then(work);
   try{return await withDeadline(()=>op,recordTimeoutMs,'History recording deadline exceeded');}

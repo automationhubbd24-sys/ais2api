@@ -291,12 +291,13 @@ async function main(){
   server.once('error',reject);server.listen(8890,'127.0.0.1',resolve);
  });
  const authTimer=setInterval(()=>{actions.syncAccounts().then(r=>{if(r.added?.length)console.log('[Accounts] synced',r.added.join(','));}).catch(()=>{});},60000);authTimer.unref();
+ const haltTimer=setInterval(()=>{if(!stopping&&dispatch.halted&&dispatch.tryResume())console.warn('[Coordinator] state checkpoint succeeded again; dispatch resumed');},30000);haltTimer.unref();
  const timer=setInterval(()=>{monitor.tick();applyMode().catch(()=>{});},2000);
  const modeTimer=setInterval(()=>browserLease.tick(),5000);modeTimer.unref();
  const cleanupTimer=setInterval(()=>cleanup.tick(),60000);cleanupTimer.unref();
  console.log('[Coordinator] loopback 8890; protocol v2; per-slot concurrency 2; explicit model quotas');
  async function shutdown(){
-  if(stopping)return;stopping=true;clearInterval(timer);clearInterval(authTimer);clearInterval(cleanupTimer);cleanup.close();monitor.close();scheduler.close();
+  if(stopping)return;stopping=true;clearInterval(timer);clearInterval(haltTimer);clearInterval(authTimer);clearInterval(cleanupTimer);cleanup.close();monitor.close();scheduler.close();
   server.close();
   const deadline=Date.now()+620000;
   while(Date.now()<deadline && ([...dispatch.slots.values()].some(s=>s.active>0||Object.keys(s.retirements||{}).length>0)||[...rotation.running].some(slot=>!dispatch.slots.get(slot).proxyApply)||catalogs.jobs.size||proxies.jobs.size)){
