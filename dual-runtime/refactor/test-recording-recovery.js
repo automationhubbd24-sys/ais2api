@@ -51,7 +51,7 @@ test('anti-truncation stops continuing after 6 minutes and fails with AT_TIME_LI
  let forwarded=0;
  const mk=()=>Object.assign(Object.create(obj),{logger:{info(){},warn(){}},_atWaitOperationDone:async()=>true,_generateRequestId:()=>'c',
   _forwardRequest(){forwarded++;},connectionRegistry:{createMessageQueue:()=>({dequeue:async()=>{throw Error('stop here');}}),removeMessageQueue(){}}});
- const res={destroyed:false,writableEnded:false};
+ const res={destroyed:false,writableEnded:false,on(){},removeListener(){}};
  await assert.rejects(mk()._atContinueUntilAnswer(round,{contents:[]},res,'anti-truncation/x','r',Date.now()-361000),
   e=>e.message==='AT_continue_deadline'&&e.atFinish.timeLimit===true&&e.atFinish.reason==='MAX_TOKENS'&&e.atFinish.chars===7);
  assert.equal(forwarded,0);
@@ -80,7 +80,7 @@ test('maxOutputTokens is pinned to the model upstream limit and client values ar
 test('Google cut-off (no finishReason) fails fast as 504 and is never retried or cooled down', () => {
   const fs = require('fs'); const path = require('path');
   const src = fs.readFileSync(path.join(__dirname, '../code/unified-server.runtime.js'), 'utf8');
-  assert.ok(src.includes("window.__gcCall.v!==4") && src.includes('window.__gcCall.v=4;'));
+  assert.ok(src.includes("window.__gcCall.v!==5") && src.includes('window.__gcCall.v=5;'));
   assert.ok(src.includes('signal:ac.signal') && src.includes("hx.hardMs||660000"));
   assert.ok(src.includes("status: 'UPSTREAM_CUT'") && src.includes('upstream cut: no finishReason'));
   assert.ok(src.includes('GCB_HARD_MS + 30000'));
@@ -89,10 +89,33 @@ test('Google cut-off (no finishReason) fails fast as 504 and is never retried or
   const st = fs.readFileSync(path.join(__dirname, '../code/stability.js'), 'utf8');
   assert.ok(/UPSTREAM_CUT\|UPSTREAM_NO_RESPONSE\|UPSTREAM_CONNECTION_LOST/.test(st));
   // the in-page script really aborts and reports 504 when fetch never settles
-  const a = src.indexOf("var ac=new AbortController()"); const b = src.indexOf("finally{clearTimeout(wd);}", a) + 'finally{clearTimeout(wd);}'.length;
-  const fn = new Function('fetch', 'base', 'hd', 'body', 'hx', 'tier', 'return (async()=>{' + src.slice(a, b) + "return JSON.stringify({s:r.status,t:tx});})();");
+  const a = src.indexOf("var ac=new AbortController()"); const fin = "finally{clearTimeout(wd);if(hx.op)delete ab_[hx.op];}"; const b = src.indexOf(fin, a) + fin.length; assert.ok(b > fin.length);
+  const fn = new Function('fetch', 'base', 'hd', 'body', 'hx', 'tier', 'var window={}; return (async()=>{' + src.slice(a, b) + "return JSON.stringify({s:r.status,t:tx});})();");
   const hang = (u, o) => new Promise((_, rj) => o.signal.addEventListener('abort', () => rj(Object.assign(Error('aborted'), {name: 'AbortError'}))));
   return fn(hang, 'x', {}, [], {hardMs: 30}, null).then(out => { const o = JSON.parse(out); assert.equal(o.s, 504); assert.equal(JSON.parse(o.t).error.status, 'UPSTREAM_NO_RESPONSE'); })
     .then(() => fn(() => Promise.reject(Error('NetworkError when attempting to fetch resource.')), 'x', {}, [], {hardMs: 1000}, null)).then(out => { const o = JSON.parse(out); assert.equal(o.s, 504); assert.equal(JSON.parse(o.t).error.status, 'UPSTREAM_CONNECTION_LOST'); })
     .then(() => fn(async () => ({status: 200, text: async () => 'ok'}), 'x', {}, [], {hardMs: 1000}, null)).then(out => assert.deepEqual(JSON.parse(out), {s: 200, t: 'ok'}));
+});
+
+test('client cancel aborts the in-page Google call (also continuation rounds); legacy bodies untouched', async () => {
+  const fs = require('fs'); const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '../code/unified-server.runtime.js'), 'utf8');
+  // in-page: a running call registered under hx.op is aborted by __gcAbort and reports 499, not 504
+  const a = src.indexOf("var ac=new AbortController()"); const fin = "finally{clearTimeout(wd);if(hx.op)delete ab_[hx.op];}"; const b = src.indexOf(fin, a) + fin.length;
+  const g = src.indexOf('window.__gcAbort=function'); const ge = src.indexOf('return true;};', g) + 'return true;};'.length;
+  const win = {};
+  const fn = new Function('window', 'fetch', 'base', 'hd', 'body', 'hx', 'tier', src.slice(g, ge) + ' return {abort: window.__gcAbort, run: (async()=>{' + src.slice(a, b) + "return JSON.stringify({s:r.status,t:tx});})()};");
+  let started; const hang = (u, o) => new Promise((_, rj) => { started = true; o.signal.addEventListener('abort', () => rj(Object.assign(Error('aborted'), {name: 'AbortError'}))); });
+  const h = fn(win, hang, 'x', {}, [], {hardMs: 60000, op: 'g9'}, null);
+  await new Promise(r => setImmediate(r)); assert.ok(started);
+  assert.equal(h.abort('g9'), true);
+  const o = JSON.parse(await h.run); assert.equal(o.s, 499); assert.equal(o.t, 'cancelled');
+  assert.equal(h.abort('g9'), false, 'handle is removed once the call settles');
+  // node side: request id is threaded through, legacy models are not tagged, cancel maps rid -> op
+  assert.ok(src.includes("if (!gcbLegacy && typeof proxyRequest.request_id === 'string') body.__aisRid = proxyRequest.request_id;"));
+  assert.ok(src.includes("delete g.__aisRid;") && src.includes('gcbOps.set(gcbRid, gcbOp)') && src.includes('if (gcbRid) gcbOps.delete(gcbRid);'));
+  assert.ok(src.includes("window.wrappedJSObject.__gcAbort(o)") && src.includes('r.s === 499'));
+  assert.ok(/_cancelBrowserRequest\(requestId\) \{\n\s+try \{ const bm = this\.browserManager/.test(src));
+  // continuation rounds cancel their own id when the client leaves, and drop the listener afterwards
+  assert.ok(src.includes('res.on("close", contOnClose);') && src.includes('res.removeListener("close", contOnClose);') && src.includes('this._cancelBrowserRequest(contId)'));
 });
