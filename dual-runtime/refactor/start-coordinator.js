@@ -40,6 +40,8 @@ async function main(){
  let browserLeaseRef=null;
  const tiers=new AccountTiers({authDir:'/opt/ais2api/auth',file:path.join(root,'ultra-mode.json'),isSingle:()=>browserLeaseRef?.mode?.single===true});
  dispatch.slotAllows=(slot,id)=>tiers.allowed(slot,id);
+ const concurrency=new (require('./slot-concurrency').SlotConcurrency)(path.join(root,'concurrency.json'));
+ dispatch.slotLimit=slot=>concurrency.get(slot);
  dispatch.slotRule=slot=>!tiers.active()?'':slot===tiers.mode.slot?'实例 '+slot+' 只用 Pro/Ultra 账号':'实例 '+slot+' 不使用 Pro/Ultra 账号';
  routing.isUltra=id=>tiers.isUltra(id);
  routing.isPremium=id=>tiers.isPremium(id);
@@ -138,6 +140,8 @@ async function main(){
   setAccountTier:body=>{const id=Number(body?.id);if(!dispatch.pool.ids.includes(id))throw Object.assign(Error('账号 '+body?.id+' 不在账号池'),{statusCode:404});
    const r=tiers.setTier(id,body?.tier);monitor.tick();return r;},
   setRunMode:body=>browserLease.setMode(body),
+  concurrency:()=>concurrency.status(),
+  setConcurrency:body=>{const r=concurrency.set(body);console.log('[Coordinator] per-slot concurrency set to A='+r.A+' B='+r.B);monitor.tick();return r;},
   targetApp:()=>targetApp.status(),
   saveTargetApp:body=>targetApp.save(body),
   applyTargetApp:()=>targetApp.apply(),
@@ -295,7 +299,7 @@ async function main(){
  const timer=setInterval(()=>{monitor.tick();applyMode().catch(()=>{});},2000);
  const modeTimer=setInterval(()=>browserLease.tick(),5000);modeTimer.unref();
  const cleanupTimer=setInterval(()=>cleanup.tick(),60000);cleanupTimer.unref();
- console.log('[Coordinator] loopback 8890; protocol v2; per-slot concurrency 2; explicit model quotas');
+ console.log('[Coordinator] loopback 8890; protocol v2; per-slot concurrency A='+concurrency.get('A')+' B='+concurrency.get('B')+'; explicit model quotas');
  async function shutdown(){
   if(stopping)return;stopping=true;clearInterval(timer);clearInterval(haltTimer);clearInterval(authTimer);clearInterval(cleanupTimer);cleanup.close();monitor.close();scheduler.close();
   server.close();

@@ -166,6 +166,13 @@ function createServer({keys,models,scheduler,status,actions,auth}){
      catch(e){const code=[400,404,409].includes(e.statusCode)?e.statusCode:503;return json(res,code,{error:code===503?'保存未确认':e.message});}
     }
    }
+   if(url.pathname==='/internal/concurrency'&&actions.concurrency){
+    if(req.method==='GET')return json(res,200,actions.concurrency());
+    if(req.method==='POST'){
+     try{return json(res,200,actions.setConcurrency(await readBody()));}
+     catch(e){return json(res,e.statusCode===400?400:503,{error:e.statusCode===400?e.message:'保存未确认'});}
+    }
+   }
    if(url.pathname==='/internal/run-mode'){
     if(req.method==='GET')return json(res,200,actions.runMode());
     if(req.method==='POST'){

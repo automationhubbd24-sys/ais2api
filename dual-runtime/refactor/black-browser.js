@@ -423,7 +423,7 @@ class ProxySystem extends EventTarget {
     let streamTerminal = false;
     let settled = false;
     if (typeof operationId !== "string" || !operationId ||
-        this.requestProcessor.activeOperations.size >= 2) {
+        this.requestProcessor.activeOperations.size >= 10) {
       this._sendErrorResponse({ status: 409, message: "Invalid request or worker busy" }, operationId);
       return;
     }

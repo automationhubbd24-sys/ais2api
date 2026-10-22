@@ -190,6 +190,13 @@ $("msingle").onchange=async()=>{const single=$("msingle").checked;
  if(single&&!confirm("停用一个实例，只保留一个处理请求。继续？")){$("msingle").checked=false;return;}
  $("msingle").disabled=true;const {ok,d}=await lpost("/api/run-mode",{single}).catch(()=>({ok:false,d:{}}));
  if(!ok){$("mres").textContent=d.error||"切换失败";$("msingle").checked=!single;$("msingle").disabled=false;return;}mshow(d);};
+// ---- per-instance concurrency ----
+async function ccload(){try{const r=await fetch("/api/concurrency",{credentials:"same-origin",redirect:"error"});const d=await r.json();if(r.ok){$("ccA").value=d.A;$("ccB").value=d.B;}}catch{}}
+$("ccsave").onclick=async()=>{const A=Number($("ccA").value),B=Number($("ccB").value);
+ if(![A,B].every(n=>Number.isInteger(n)&&n>=1&&n<=10)){$("ccres").textContent="并发数只能是 1 到 10 的整数";return;}
+ $("ccsave").disabled=true;const {ok,d}=await lpost("/api/concurrency",{A,B}).catch(()=>({ok:false,d:{}}));$("ccsave").disabled=false;
+ if(ok){$("ccA").value=d.A;$("ccB").value=d.B;$("ccres").textContent="已保存：实例 A "+d.A+"，实例 B "+d.B;}else{$("ccres").textContent=d.error||"保存失败";ccload();}};
+ccload();
 // ---- Pro/Ultra dedicated instance ----
 let utimer=null;
 function ushow(u){

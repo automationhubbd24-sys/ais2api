@@ -30,7 +30,7 @@ function read(file){
   seen.add(slot);
   if(state.requests===undefined&&typeof state.busy==='boolean')state.requests=state.busy&&state.request?[state.request]:[];
   if(state.active===undefined)state.active=state.requests.length;
-  if(Number.isSafeInteger(state.active)===false||state.active<0||state.active>2)throw Error('Invalid active count');
+  if(Number.isSafeInteger(state.active)===false||state.active<0||state.active>10)throw Error('Invalid active count');
   if(Array.isArray(state.requests)===false||state.requests.length!==state.active||state.requests.some(x=>typeof x!=='string'||!x))throw Error('Invalid requests');
   delete state.busy;delete state.request;
   if(state.usesFlash38===undefined){
