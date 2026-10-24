@@ -108,8 +108,12 @@ async function loadOverviewUsage(force=false){
   finally{panel.removeAttribute('aria-busy');overviewUsageRead=null;}
  })();return overviewUsageRead;
 }
+let relogin=null,reloginAt=0;
+async function loadRelogin(){if(Date.now()-reloginAt<20000)return;reloginAt=Date.now();try{relogin=await api('/api/relogin');}catch{relogin=null;}}
+const reloginLabels={needs_verification:'需要人工验证',failed:'登录失败'};
 function renderAccountRows(d=state){
  if(!d)return;
+ if(Date.now()-reloginAt>=20000)loadRelogin().then(()=>renderAccountRows()).catch(()=>{});
  const query=$('quota-search').value.trim().toLowerCase(),status=$('account-status').value,size=Number($('account-page-size').value);
  const accounts=d.accounts.filter(a=>(!query||String(a.id).includes(query)||String(a.name||'').toLowerCase().includes(query))&&(status==='all'||accountState(a)===status));
  accountPage=Math.max(1,Math.min(accountPage,Math.ceil(accounts.length/size)||1));
@@ -143,6 +147,18 @@ function renderAccountRows(d=state){
     (bad?'删除失效账号 #':'删除账号 #')+a.id+(a.name?'（'+a.name+'）':'')+'？\n会删除它的登录文件和保存的密码，使用记录保留。',
     r=>'账号 #'+r.id+' 已删除'));
    actions.append(remove);if(bad)statusCell.title='登录失效，已排除自动轮换';
+   const held=relogin?.held?.[a.id],running=relogin?.running?.account===a.id,queued=(relogin?.queue||[]).includes(a.id);
+   if(bad&&running){statusCell.append(el('small','正在自动登录…','cookie-line'));}
+   else if(bad&&queued){statusCell.append(el('small','排队自动登录（每 20 分钟一个）','cookie-line'));}
+   if(bad&&held){
+    statusCell.append(el('small',(reloginLabels[held.result]||'登录失败')+'：'+held.message,'cookie-line warn'));
+    statusCell.title='自动登录 '+date(held.at)+' 失败，已停止重试，请选择重新登录或删除';
+    const again=el('button','重新登录');again.type='button';again.disabled=mutating||!fresh;again.title='把该账号排到下一个登录（只试一次）';
+    again.addEventListener('click',async()=>{if(!confirm('重新登录账号 #'+a.id+'？\n会暂停它失败时所在的实例几分钟，失败后仍会停下等你处理。'))return;
+     again.disabled=true;try{relogin=await api('/api/relogin/retry',{id:a.id});reloginAt=Date.now();notice('账号 #'+a.id+' 已排入登录');renderAccountRows();}
+     catch(e){notice('操作失败：'+e.message);again.disabled=false;}});
+    actions.insertBefore(again,remove);
+   }
   }
   row.append(actions);rows.append(row);
  }

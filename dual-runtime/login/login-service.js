@@ -45,6 +45,12 @@ function writeAccount(storage,email,tier,alias){
  fs.chownSync(file,1000,1000);
  return index;
 }
+// The worker's own network and SOCKS egress, so a re-login looks like the browser that just failed.
+function workerNet(slot){
+ try{const l=fs.readFileSync(path.join(RT,'slots',slot,'worker.env'),'utf8').split('\n').find(x=>x.startsWith('SOCKS_UPSTREAM_URL='));
+  const u=new URL(l.slice(19).trim());if(u.protocol!=='socks5:')return null;
+  return {network:'ais2api-dual-'+slot.toLowerCase(),upstream:u.href};}catch{return null;}
+}
 function refreshAccount(id,storage){
  const {cookies,origins}=cleanStorage(storage);
  if(cookies.filter(c=>/^(SID|__Secure-1PSID|__Secure-3PSID|SAPISID|HSID|SSID)$/.test(c.name)).length<3)throw Error('登录状态不完整');
@@ -65,7 +71,7 @@ function coord(method,p,body){
   req.on('error',()=>resolve({status:0,body:null}));req.setTimeout(p==='/internal/browser-lease'?420000:15000,()=>{req.destroy();resolve({status:0,body:null});});req.end(payload);
  });
 }
-async function leaseAcquire(owner){const r=await coord('POST','/internal/browser-lease',{action:'acquire',owner});
+async function leaseAcquire(owner,slot){const r=await coord('POST','/internal/browser-lease',{action:'acquire',owner,...(slot?{slot}:{})});
  if(r.status!==200)throw Error((r.body&&r.body.error)||'暂停实例失败');return r.body;}
 async function leaseRelease(){for(let i=0;i<3;i++){const r=await coord('POST','/internal/browser-lease',{action:'release'});if(r.status===200)return true;await new Promise(x=>setTimeout(x,5000));}return false;}
 function syncPool(){
@@ -83,21 +89,23 @@ function alreadyImported(email){
 }
 function startJob(email,password,opts={}){
  const id=crypto.randomUUID(),name='ais-login-'+id.slice(0,8);
- const job={id,name,email,tier:['pro','ultra','ultra20'].includes(opts.tier)?opts.tier:'standard',alias:String(opts.alias||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,40),target:opts.target||null,auto:!!opts.auto,status:'running',step:'starting',need:null,message:'',account:null,created:Date.now(),updated:Date.now()};
+ const job={id,name,email,tier:['pro','ultra','ultra20'].includes(opts.tier)?opts.tier:'standard',alias:String(opts.alias||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,40),target:opts.target||null,auto:!!opts.auto,slot:opts.slot==='A'||opts.slot==='B'?opts.slot:null,status:'running',step:'starting',need:null,message:'',account:null,created:Date.now(),updated:Date.now()};
  jobs.set(id,job);
  (async()=>{
- try{job.step='pausing_worker';await leaseAcquire('login:'+id.slice(0,8));job.leased=true;}
+ try{job.step='pausing_worker';await leaseAcquire('login:'+id.slice(0,8),job.slot);job.leased=true;}
  catch(e){job.status='failed';job.message=e.message;job.updated=Date.now();password=null;return;}
  if(job.status!=='running'){password=null;job.leased=false;await leaseRelease();return;}
  job.step='starting';job.updated=Date.now();
- const up=ws.upstreamFor();
+ const wn=job.slot?workerNet(job.slot):null;
+ if(job.slot&&!wn){job.status='failed';job.message='读取实例 '+job.slot+' 出口配置失败';password=null;job.leased=false;await leaseRelease();return;}
+ const up=wn?wn.upstream:ws.upstreamFor();
  const child=spawn('docker',['run','--rm','-i','--name',name,'--user','1000:1000','--memory','700m','--memory-swap','1400m','--shm-size','256m',
   '--pids-limit','256','--cap-drop','ALL','--security-opt','no-new-privileges:true','--log-driver','none',
-  '-v',RUNNER+':/app/login-runner.js:ro','-v','/opt/ais2api/proxy-relay:/relay:ro',
+  ...(wn?['--network',wn.network]:[]),'-v',RUNNER+':/app/login-runner.js:ro','-v','/opt/ais2api/proxy-relay:/relay:ro',
   '--entrypoint','node',IMAGE,'/app/login-runner.js'],{stdio:['pipe','pipe','ignore']});
  job.child=child;
  child.stdin.on('error',()=>{});
- child.stdin.write(JSON.stringify({email,password,upstream:up||undefined})+'\n');
+ child.stdin.write(JSON.stringify({email,password,upstream:up||undefined,totp:opts.totp||undefined})+'\n');opts.totp=null;
  const keep=opts.remember?password:null;
  password=null;
  let buf='';
@@ -181,6 +189,8 @@ http.createServer(async(req,res)=>{
   const auth=req.headers.authorization||'';
   if(!auth.startsWith('Bearer ')||!eq(auth.slice(7),KEY))return send(res,401,{error:'Unauthorized'});
   const url=new URL(req.url,'http://x');
+  if(req.method==='GET'&&url.pathname==='/login/nightly')return send(res,200,nightly.status());
+  if(req.method==='POST'&&url.pathname==='/login/nightly/retry'){const b=await body(req);try{return send(res,200,nightly.retry(b.id));}catch(e){return send(res,409,{error:e.message});}}
   if(req.method==='POST'&&url.pathname==='/login/start'){
    const b=await body(req);const email=String(b.email||'').trim().toLowerCase(),password=String(b.password||'');
    if(!EMAIL.test(email)||!password||password.length>256)return send(res,400,{error:'邮箱或密码格式不正确'});
@@ -240,6 +250,10 @@ async function autoRelogin(){
    const c=stored[a.id];
    if(!c||a.authStatus!=='invalid'||a.invalidReason!=='login_required'||a.owner)continue;
    if(Date.now()-(c.lastAttemptAt||0)<RETRY_MS)continue;
+   // A failed attempt waits for the operator (retry or delete); never loop on it.
+   if(c.lastResult&&c.lastResult!=='ok')continue;
+   // Auto-registered accounts belong to the nightly scheduler.
+   if(registeredEmails()[String(c.email||'').toLowerCase()])continue;
    let cred;try{cred=creds.get(a.id);}catch{creds.mark(a.id,'decrypt_failed');continue;}
    if(!cred)continue;
    let owner='';try{owner=String(JSON.parse(fs.readFileSync(path.join(AUTH,'auth-'+a.id+'.json'),'utf8')).accountName||'').toLowerCase();}catch{}
@@ -258,5 +272,15 @@ async function autoRelogin(){
   }
  }catch{}
 }
+const {NightlyRelogin,registered:registeredEmails}=require('./nightly-relogin');
+// Accounts flagged before the slot was recorded: the newest retired container of that account tells which worker failed.
+function failedSlot(id){return new Promise(res=>{let out='';
+ const c=spawn('docker',['ps','-a','--filter','label=operit.project=ais2api-dual','--filter','label=operit.account='+id,'--format','{{.CreatedAt}}|{{.Label "operit.slot"}}|{{.Status}}'],{stdio:['ignore','pipe','ignore']});
+ c.stdout.on('data',d=>{out+=d;});c.on('error',()=>res(null));
+ c.on('close',()=>{const rows=out.trim().split('\n').filter(Boolean).map(l=>l.split('|')).filter(r=>/^Exited/.test(r[2])).sort((a,b)=>a[0]<b[0]?1:-1);
+  res(rows[0]&&['A','B'].includes(rows[0][1])?rows[0][1]:null);});});}
+const nightly=new NightlyRelogin({file:path.join(RT,'login','nightly-relogin.json'),coord,startJob,cancel,busy,memOk,failedSlot,
+ emailOf:id=>{try{return String(JSON.parse(fs.readFileSync(path.join(AUTH,'auth-'+id+'.json'),'utf8')).accountName||'');}catch{return '';}}});
+nightly.start();
 setTimeout(autoRelogin,60000).unref();
 setInterval(autoRelogin,5*60000).unref();

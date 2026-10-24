@@ -56,3 +56,4 @@ dual-runtime/ultra-mode.json
 dual-runtime/concurrency.json
 dual-runtime/usage-missing.jsonl*
 dual-runtime/frontend-verified.json
+dual-runtime/login/nightly-relogin.json

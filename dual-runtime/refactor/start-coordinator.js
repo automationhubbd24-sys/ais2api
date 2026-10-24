@@ -115,7 +115,7 @@ async function main(){
    const cooldownUntil=dispatch.pool.cooldowns.get(id)||0;
    const flag=dispatch.accountFlags[id];
    return {cookie:cookieStatus(id,owner,flag),authStatus:flag?.status||'unknown',invalidReason:flag?.reason,
-    invalidAt:flag?.at,canDelete:flag?.status!=='deleted'&&!accountOccupied(id),
+    invalidAt:flag?.at,invalidSlot:flag?.slot,canDelete:flag?.status!=='deleted'&&!accountOccupied(id),
     id,name,alias:names.alias,accountName:names.accountName,tier:tiers.tier(id),owner:owner||null,cooldownUntil,quota:dispatch.quotas.summary(id,policyStore.policies)};
   })
  });
@@ -134,7 +134,7 @@ async function main(){
  monitor.tick();
  const actions={
   leaseStatus:()=>browserLease.status(),
-  leaseAcquire:body=>browserLease.acquire(body?.owner),
+  leaseAcquire:body=>browserLease.acquire(body?.owner,body?.slot),
   leaseRelease:()=>browserLease.release(false),
   runMode:()=>browserLease.modeStatus(),
   ultraMode:()=>tiers.status(dispatch.pool.ids),

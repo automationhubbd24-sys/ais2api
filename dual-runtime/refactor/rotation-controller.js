@@ -111,7 +111,7 @@ class RotationController {
   if(description.Id===marker.oldContainerId||description.Config?.Labels?.['operit.account']!==String(ticket.id)||
      description.State?.Running!==false||description.State?.Pid!==0||description.State?.Status!=='exited')
    throw Error('Failed target closure unconfirmed');
-  d.accountFlags[ticket.id]||={status:'invalid',reason:'login_required',at:Date.now()};
+  d.accountFlags[ticket.id]||={status:'invalid',reason:'login_required',at:Date.now(),slot};
   d.checkpoint();
   this.releaseGate(slot,ticket.token);
   if(this.gate(slot))return false;

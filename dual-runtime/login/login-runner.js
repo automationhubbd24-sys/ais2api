@@ -10,6 +10,16 @@ const lines=[];let waiter=null;
 rl.on('line',l=>{let m;try{m=JSON.parse(l);}catch{return;}if(m.cancel){emit({type:'result',ok:false,code:'CANCELLED',message:'已取消'});process.exit(0);}if(waiter){const w=waiter;waiter=null;w(m);}else lines.push(m);});
 rl.on('close',()=>{if(waiter)process.exit(0);});
 const next=ms=>new Promise((res,rej)=>{if(lines.length)return res(lines.shift());const t=setTimeout(()=>{waiter=null;rej(Error('INPUT_TIMEOUT'));},ms);waiter=m=>{clearTimeout(t);res(m);};});
+const crypto=require('crypto');
+// RFC 6238 TOTP (sha1/6/30 by default), same as auto-register/totp.py.
+function totpAt(secret,t,digits=6,period=30){
+ const A='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';let bits='';
+ for(const ch of String(secret).toUpperCase().replace(/[\s=]/g,'')){const v=A.indexOf(ch);if(v<0)throw Error('bad secret');bits+=v.toString(2).padStart(5,'0');}
+ const key=Buffer.from(bits.match(/.{8}/g).map(b=>parseInt(b,2)));
+ const c=Buffer.alloc(8);c.writeBigUInt64BE(BigInt(Math.floor(t/1000/period)));
+ const h=crypto.createHmac('sha1',key).update(c).digest(),o=h[h.length-1]&15;
+ return String((h.readUInt32BE(o)&0x7fffffff)%10**digits).padStart(digits,'0');
+}
 const KEY=/^(SID|__Secure-1PSID|__Secure-3PSID|SAPISID|HSID|SSID)$/;
 async function page2(p){const url=p.url();let text='';try{text=(await p.locator('body').innerText({timeout:3000})).replace(/\s+/g,' ').trim();}catch{}let host='',path='';try{const u=new URL(url);host=u.hostname;path=u.pathname;}catch{}return {url,host,path,text};}
 function classify(s){
@@ -29,7 +39,7 @@ function heading(t){
 async function clickAny(p,names){for(const n of names){const b=p.getByRole('button',{name:n,exact:false});if(await b.count().catch(()=>0)){await b.first().click({timeout:5000}).catch(()=>{});return true;}}return false;}
 (async()=>{
  const init=await next(30000);
- const {email,password,upstream}=init;init.password=undefined;
+ const {email,password,upstream}=init;const totp=init.totp||null;init.password=undefined;init.totp=undefined;let lastCode='';
  let proxy;
  if(upstream){
   const {Server}=require('/relay/node_modules/proxy-chain');
@@ -63,7 +73,13 @@ async function clickAny(p,names){for(const n of names){const b=p.getByRole('butt
    if(c==='WRONG_PASSWORD')return finish({ok:false,code:c,message:'密码错误'});
    if(c==='REJECTED'||c==='INSECURE')return finish({ok:false,code:c,message:'Google 拒绝了本次登录，稍后再试或换号'});
    if(/\/speedbump|gaplustos/.test(s.path)){await clickAny(p,['I understand','I agree','Accept','Continue','Not now','Skip','Confirm']);continue;}
+   if(c==='PENDING'&&/confirmidentifier/.test(s.path)){await clickAny(p,['Next','下一步','Continue']);continue;}
    if(c!=='CHALLENGE')continue;
+   // Choose the authenticator app when Google offers a list of methods.
+   if(totp&&/\/challenge\/selection/.test(s.path)){
+    const o=p.getByText(/Google Authenticator|Authenticator app|身份验证器/i).first();
+    if(await o.count().catch(()=>0)){await o.click({timeout:5000}).catch(()=>{});emit({type:'status',step:'choose_totp'});continue;}
+   }
    const input=p.locator('input[type=tel]:visible, input[type=text]:visible, input[type=email]:visible, input[type=number]:visible').first();
    const hasInput=await input.count().catch(()=>0);
    if(!hasInput){
@@ -73,6 +89,16 @@ async function clickAny(p,names){for(const n of names){const b=p.getByRole('butt
    }
    if(asked>=5)return finish({ok:false,code:'TOO_MANY_STEPS',message:'验证步骤过多'});
    asked++;
+   if(totp&&(/\/challenge\/totp/.test(s.path)||/Authenticator|身份验证器/i.test(s.text))){
+    let now=Date.now(),code=totpAt(totp,now);
+    if(code===lastCode||(now/1000)%30>26){await p.waitForTimeout((30-(now/1000)%30)*1000+1500);now=Date.now();code=totpAt(totp,now);}
+    if(code===lastCode)return finish({ok:false,code:'TOTP_REJECTED',message:'两步验证码未被接受'});
+    lastCode=code;
+    await input.fill(code);await p.waitForTimeout(400);
+    if(!await clickAny(p,['Next','Verify','下一步']))await p.keyboard.press('Enter');
+    emit({type:'status',step:'totp'});
+    await p.waitForTimeout(5000);continue;
+   }
    const kind=/phone number|电话号码|手机号/i.test(s.text)&&!/code|验证码/i.test(s.text.slice(0,200))?'phone':(/code|验证码|G-/i.test(s.text)?'code':'text');
    emit({type:'need',kind,prompt:heading(s.text).slice(0,200)});
    let m;try{m=await next(300000);}catch{return finish({ok:false,code:'INPUT_TIMEOUT',message:'等待输入超时'});}
