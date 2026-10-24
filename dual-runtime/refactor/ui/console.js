@@ -173,8 +173,8 @@ function render(d){
   const health=s.workerHealth,healthFresh=health?.account===s.account && health?.workerEpoch===s.workerEpoch && Date.now()-health.observedAt<15000;
   const pending=(s.pendingExecutions||[]).filter(t=>t.phase==='reconciling').length;
   const label=s.legacyUnresolved?'历史请求待核实':healthFresh&&health.hardQuarantine?'故障隔离':
-   healthFresh&&health.pendingCompletions>0?'等待完成':pending?'请求待核实':s.pendingRetirements?'等待清理确认':s.operation?({auth:'保存登录态',catalog:'模型同步',rotation:'账号轮换',recovery:'安全恢复',cleanup:'资源清理'}[s.operation.kind]||'操作中'):s.rotationBlocked?'轮换受阻':s.pending?'轮换中':s.ready?(s.active?'处理中':'已就绪'):'未就绪';
-  const unhealthy=s.healthCheck?.error||s.legacyUnresolved||s.rotationBlocked||s.recoveryBlocked||(healthFresh&&health.hardQuarantine);
+   healthFresh&&health.pendingCompletions>0?'等待完成':pending?'请求待核实':s.pendingRetirements?'等待清理确认':s.operation?({auth:'保存登录态',catalog:'模型同步',rotation:'账号轮换',recovery:'安全恢复',cleanup:'资源清理'}[s.operation.kind]||'操作中'):s.rotationBlocked?'轮换受阻':s.pending?'轮换中':s.ready?(s.active?'处理中':'已就绪'):(s.unready?.message?'未就绪：'+s.unready.message:'未就绪');
+  const unhealthy=(health?.signer?.state==='failed')||s.healthCheck?.error||s.legacyUnresolved||s.rotationBlocked||s.recoveryBlocked||(healthFresh&&health.hardQuarantine);
   head.append(identity,statusBadge(label,unhealthy||!s.ready?'warn':s.active?'assigned':'good'));box.append(head);
   const metrics=el('div',undefined,'worker-metrics');
   const quotas=Object.values(s.quota?.models||{}).sort((x,y)=>(Number(y.used)||0)-(Number(x.used)||0)),usedN=quotas.filter(q=>Number(q.used)>0).length,headN=usedN?Math.min(3,usedN):3;
@@ -185,6 +185,10 @@ function render(d){
   if(s.rotationFailure)alerts.push(s.rotationFailure.retryable?'轮换失败，'+date(s.rotationFailure.retryAt)+' 重试':'轮换失败，请检查实例登录与账号状态');
   const m=s.manualAction;if(m&&Date.now()-(m.finishedAt||m.at)<600000){const n={rotate:'手动切换',restart:'手动重启',resume:'继续切换'}[m.action]||'手动操作';alerts.push(m.phase==='running'?n+'进行中':m.phase==='ok'?n+'完成'+(m.interrupted?'，中断了 '+m.interrupted+' 个请求':''):n+'失败：'+m.error);}
   if(!healthFresh)alerts.push('状态待更新');
+  {const sg=health?.signer,fe=health?.frontend;
+   if(!s.ready&&s.unready?.message)alerts.push('未就绪原因：'+s.unready.message+(s.unready.since?'（自 '+date(s.unready.since)+' 起）':'')+(fe?'，前端版本 '+String(fe).slice(0,8):''));
+   if(healthFresh&&sg&&sg.state==='failed'&&sg.detail)alerts.push('签名错误详情：'+sg.detail);
+   if(s.frontendHold?.message)alerts.push(s.frontendHold.message);}
   if(s.pendingRetirements)alerts.push(s.pendingRetirements+' 个请求等待清理确认，暂不轮换');
   if(pending)alerts.push(pending+' 个执行等待完成证据，占用已保留');
   if(s.quota?.legacy)alerts.push('历史汇总用量已保留，未归入模型精确计数');

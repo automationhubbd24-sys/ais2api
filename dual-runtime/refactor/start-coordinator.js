@@ -53,6 +53,9 @@ async function main(){
  const cleanup=new RetiredResourceCleanup({dispatch,driver,root,options:cfg.retiredCleanup===undefined?{}:cfg.retiredCleanup,
   isStopping:()=>stopping,hasWaiting:()=>scheduler.queue.length>0});
  rotation.onRetired=(slot,marker)=>cleanup.record(slot,marker);
+ const frontendGuard=new (require('./frontend-guard').FrontendGuard)({file:path.join(root,'frontend-verified.json')});
+ dispatch.onWorkerStatus=(slot,status)=>frontendGuard.observe(slot,status);
+ rotation.frontendHold=slot=>frontendGuard.hold(slot);
  const {CoordinatorMonitor}=require('./coordinator-monitor');
  const monitor=new CoordinatorMonitor({dispatch,client,catalogs,recovery,rotation,routing,scheduler});
  const {ConsoleAuth,StreamMode}=require('./console-auth');
@@ -90,11 +93,12 @@ async function main(){
   analytics:recordedForward.status(),
   gatewayRepair:{...sanitizeStats},
   retiredCleanup:cleanup.status(),
+  frontendGuard:frontendGuard.status(),
   quotaMode:"per-account-per-model",quotaLimits:require('./model-quota-ledger').TIER_LIMITS,
   slots:Object.fromEntries([...dispatch.slots].map(([slot,s])=>[slot,{
    account:dispatch.pool.slots.get(slot)?.current,
    pending:dispatch.pool.slots.get(slot)?.pending?.id,
-   active:s.active,ready:s.ready,
+   active:s.active,ready:s.ready,unready:s.ready?null:(s.unready||null),frontendHold:frontendGuard.hold(slot),
    quota:Number.isSafeInteger(dispatch.pool.slots.get(slot)?.current)?dispatch.quotas.summary(dispatch.pool.slots.get(slot).current,policyStore.policies):undefined,
    healthCheck:monitor.status(slot),workerEpoch:s.workerEpoch,workerHealth:s.workerHealth,pendingRetirements:Object.keys(s.retirements||{}).length,
    pendingExecutions:Object.values(s.executions||{}).map(t=>({id:t.id,phase:t.phase,createdAt:t.createdAt})),

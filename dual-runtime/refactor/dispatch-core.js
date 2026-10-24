@@ -29,9 +29,23 @@ class DispatchCore {
    pendingCompletions:Number.isSafeInteger(status.pendingCompletions)?status.pendingCompletions:null};
   Object.assign(s.workerHealth,{executionProtocol:status.executionProtocol,busy:status.busy,
    activeRequests:status.activeRequests,browserOperations:status.browserOperations,quarantined:status.quarantined});
+  const sig=status.signer&&typeof status.signer==='object'?status.signer:null,str=(v,n)=>typeof v==='string'?v.slice(0,n):null,num=v=>Number.isFinite(v)?v:null;
+  s.workerHealth.frontend=typeof status.frontend==='string'&&/^[0-9a-f]{12}$/.test(status.frontend)?status.frontend:null;
+  s.workerHealth.signer=sig?{state:str(sig.state,16),reason:str(sig.reason,40),message:str(sig.message,80),detail:str(sig.detail,200),since:num(sig.since),okRequests:num(sig.okRequests),lastOkAt:num(sig.lastOkAt),
+   names:sig.names&&typeof sig.names==='object'?{hash:str(sig.names.hash,24),sign:str(sig.names.sign,24),service:str(sig.names.service,24)}:null}:null;
   const records=Object.values(s.executions||{});
   const unresolved=Boolean(s.rotation||s.recovery||s.proxyApply)||Object.keys(s.retirements||{}).length>0 || records.length!==s.requests.size || records.some(t=>t.phase!=="running"||t.workerEpoch!==s.workerEpoch);
   s.ready=validEpoch && !unresolved && !this.operations.has(slot) && status.account===owner?.current && status.ready===true && Number.isSafeInteger(status.browserOperations) && status.browserOperations<this.limitOf(slot) && status.quarantined===false;
+  const wu=status.unready&&typeof status.unready==='object'&&/^[a-z_]{1,40}$/.test(status.unready.reason||'')?
+   {reason:status.unready.reason,message:str(status.unready.message,80)||status.unready.reason,since:num(status.unready.since)}:null;
+  s.unready=s.ready?null:!validEpoch?{reason:'epoch_unconfirmed',message:'实例身份未确认'}:
+   status.account!==owner?.current?{reason:'account_mismatch',message:'实例账号与分配不一致'}:
+   status.ready!==true?(wu||{reason:'worker_unready',message:'实例未就绪'}):
+   status.quarantined!==false?{reason:'quarantined',message:'实例已隔离'}:
+   this.operations.has(slot)?{reason:'operation',message:'正在执行维护操作'}:
+   unresolved?{reason:'unresolved',message:'有执行或轮换待核实'}:
+   {reason:'at_capacity',message:'并发已满'};
+  try{this.onWorkerStatus?.(slot,status,s);}catch{}
  }
  acquire(id,plan,eligible=()=>true){
   if(!/^[a-f0-9-]{36}$/.test(id||""))throw Error("Invalid request ID");

@@ -441,7 +441,50 @@ return window.__tb?'ok':'wait';})()`;
         global.__gcbPage = pg; let gcbKey = null; const gcbHx = {}; const gcbWaa = 'AIzaSyBGb5fGAyC-pRcRU6MUHb__b_vKha71HRE'; const GCB_HARD_MS = Number(process.env.GCB_HARD_MS) || 660000; const gcbOps = new Map(); const gcbCancelled = new Set(); let gcbSeq = 0;
         this.gcbCancel = rid => { gcbCancelled.add(rid); setTimeout(() => gcbCancelled.delete(rid), 120000).unref?.(); const op = gcbOps.get(rid); if (!op) return false; gcbOps.delete(rid); log.info('[GCBridge] client cancelled ' + rid + '; aborting upstream call ' + op); pg.evaluate(o => window.wrappedJSObject.__gcAbort(o), op).catch(() => {}); return true; }; // Google itself cuts at ~600s
         this.context.on('request', r => { try { if (!/alkalimakersuite-pa\.clients6\.google\.com\/\$rpc\/.*MakerSuiteService\//.test(r.url())) return; const k = r.headers()['x-goog-api-key']; if (k && k !== gcbWaa && /^AIza/.test(k)) gcbKey = k; const h = r.headers(); if (h['x-aistudio-g1-tier']) gcbHx.tier = h['x-aistudio-g1-tier']; if (h['x-goog-ext-519733851-bin']) gcbHx.ext = h['x-goog-ext-519733851-bin']; } catch {} });
-        const gcbInstall = () => pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_INSTALL).catch(e => 'err:' + String(e && e.message || e).slice(0, 120)).then(r => { const v = typeof r === 'string' ? r : JSON.stringify(r); pg.evaluate(() => { try { const w = window.wrappedJSObject; return 'hash=' + (w.__gcHn || '-') + ' tb=' + (w.__tb ? 'yes' : 'no') + ' v=' + (w.__gcCall ? w.__gcCall.v : '-') + ' cn=' + (w.__cnSeen || '-') + ' gm=' + w.__gmCnt + ' via=' + (w.__tbVia || '-') + ' seen=' + (w.__gmSeen || '-') + ' snap=' + (w.__gcSn || '-') + ' vis=' + (w.__gcVisN || 0) + '' } catch (e) { return 'probe err ' + e.message; } }).then(x => { const k = v + ' ' + x; if (k !== gcbLast) { gcbLast = k; log.warn('[GCBridge] install result=' + String(v).slice(0, 80) + ' ' + String(x).slice(0, 900)); } }).catch(() => {}); return r; }); let gcbLast = null;
+        const gcbInstall = () => pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_INSTALL).catch(e => 'err:' + String(e && e.message || e).slice(0, 120)).then(r => { const v = typeof r === 'string' ? r : JSON.stringify(r); try { gcbAssess(v); } catch (e) {} pg.evaluate(() => { try { const w = window.wrappedJSObject; return 'hash=' + (w.__gcHn || '-') + ' tb=' + (w.__tb ? 'yes' : 'no') + ' v=' + (w.__gcCall ? w.__gcCall.v : '-') + ' cn=' + (w.__cnSeen || '-') + ' gm=' + w.__gmCnt + ' via=' + (w.__tbVia || '-') + ' seen=' + (w.__gmSeen || '-') + ' snap=' + (w.__gcSn || '-') + ' vis=' + (w.__gcVisN || 0) + '' } catch (e) { return 'probe err ' + e.message; } }).then(x => { const k = v + ' ' + x; if (k !== gcbLast) { gcbLast = k; log.warn('[GCBridge] install result=' + String(v).slice(0, 80) + ' ' + String(x).slice(0, 900)); } }).catch(() => {}); return r; }); let gcbLast = null;
+        // ---- Signer self-check: readiness must include "can this page actually sign a request" ----
+        const GCB_SIGN_MSG = { frontend_object_missing: '找不到 AI Studio 前端对象', hash_fn_missing: '没找到哈希函数', signer_missing: '没找到签名函数', token_service_missing: '没拿到签名服务（已尝试自唤醒）', sign_probe_failed: '本地试签失败', frontend_incompatible: '连续签名报错，前端可能不兼容', install_error: '签名模块安装出错' };
+        const GCB_INSTALL_REASON = { nom: 'frontend_object_missing', nosnap: 'signer_missing', nohash: 'hash_fn_missing', wait: 'token_service_missing' };
+        const GCB_SIGN_ERR = /token service not ready|snapshot not a string|page api key not found|request_snapshot|__gcS|__gcH/;
+        const GCB_PROBE = `(async function(){var w=window,o={hash:w.__gcHn||null,sign:w.__gcSn||null,via:w.__tbVia||null};try{if(!w.__gcS||!w.__gcH||!w.__tb){o.r='missing';return JSON.stringify(o);}var h=await w.__gcH('ais2api signer self-check');var t=await Promise.race([w.__gcS(w.__tb,h),new Promise(function(r){setTimeout(function(){r(null);},10000);})]);o.r=t===null?'timeout':typeof t!=='string'?'type '+typeof t:t.length<16?'short '+t.length:'ok';}catch(e){o.r='err '+String(e&&e.message||e).slice(0,120);}return JSON.stringify(o);})()`;
+        this.gcbFrontend = null;
+        const gcbSig = this.gcbSigner = { state: 'checking', reason: null, message: '签名自检中', detail: null, since: Date.now(), pageAt: Date.now(), frontend: null, names: null, okRequests: 0, failStreak: 0, probe: null, probedAt: 0 };
+        let gcbProbing = false;
+        pg.on('framenavigated', fr => { try { if (fr !== pg.mainFrame()) return; gcbSig.pageAt = Date.now(); gcbSig.probe = null; gcbSig.failStreak = 0; gcbSig.names = null; gcbSet('checking'); } catch (e) {} });
+        const gcbSet = (state, reason, detail) => {
+          const changed = gcbSig.state !== state || gcbSig.reason !== (reason || null);
+          gcbSig.state = state; gcbSig.reason = reason || null; gcbSig.detail = detail ? String(detail).slice(0, 200) : null;
+          gcbSig.message = state === 'ok' ? '签名正常' : state === 'checking' ? '签名自检中' : (GCB_SIGN_MSG[reason] || '签名不可用');
+          if (changed) { gcbSig.since = Date.now(); log[state === 'failed' ? 'warn' : 'info']('[GCBridge] signer ' + state + (reason ? ' ' + reason : '') + ' frontend=' + (gcbSig.frontend || '-') + (gcbSig.detail ? ' ' + gcbSig.detail : '')); }
+        };
+        const gcbProbe = () => {
+          if (gcbProbing || pg.isClosed()) return; gcbProbing = true; gcbSig.probedAt = Date.now();
+          pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_PROBE).then(raw => {
+            let o; try { o = JSON.parse(raw); } catch (e) { o = { r: 'bad ' + String(raw).slice(0, 60) }; }
+            gcbSig.names = { hash: o.hash || null, sign: o.sign || null, service: o.via || null };
+            if (o.r === 'missing') { gcbSig.probe = null; return; }
+            gcbSig.probe = o.r === 'ok' ? 'ok' : 'failed';
+            if (gcbSig.probe === 'ok') { if (gcbSig.failStreak < 3) gcbSet('ok'); } else if (Date.now() - gcbSig.pageAt < 60000) { if (gcbSig.state !== 'checking') gcbSet('checking'); } else gcbSet('failed', 'sign_probe_failed', o.r);
+          }).catch(e => { gcbSig.probe = null; log.warn('[GCBridge] signer probe error ' + String(e && e.message || e).slice(0, 120)); }).finally(() => { gcbProbing = false; });
+        };
+        const gcbAssess = v => {
+          const now = Date.now();
+          if (gcbSig.state === 'failed' && gcbSig.reason === 'frontend_incompatible') {
+            if (now - gcbSig.since < 300000) return;
+            gcbSig.failStreak = 2; // half-open after 5 min: real traffic may try again, one more signing error re-trips
+          }
+          const reason = v === 'ok' ? null : (GCB_INSTALL_REASON[v] || 'install_error');
+          if (reason) { if (now - gcbSig.pageAt < 60000) { if (gcbSig.state !== 'checking') gcbSet('checking'); } else gcbSet('failed', reason, reason === 'install_error' ? v : null); return; }
+          if (gcbSig.probe === 'ok') { if (gcbSig.state !== 'ok') gcbSet('ok'); return; }
+          if (gcbSig.probe === 'failed' && now - gcbSig.probedAt < 30000) return;
+          gcbProbe();
+        };
+        const gcbOutcome = (ok, text) => {
+          if (ok) { gcbSig.okRequests++; gcbSig.failStreak = 0; gcbSig.lastOkAt = Date.now(); if (gcbSig.state === 'failed' && gcbSig.reason === 'frontend_incompatible') gcbSet('ok'); return; }
+          const t = String(text || ''); if (!GCB_SIGN_ERR.test(t)) return;
+          gcbSig.failStreak++;
+          if (gcbSig.failStreak >= 3 && !(gcbSig.state === 'failed' && gcbSig.reason === 'frontend_incompatible')) gcbSet('failed', 'frontend_incompatible', t);
+        };
         const gcbTimer = setInterval(() => { if (pg.isClosed()) return clearInterval(gcbTimer); gcbInstall(); }, 3000);
         const CAT = { HARM_CATEGORY_HARASSMENT: 7, HARM_CATEGORY_HATE_SPEECH: 8, HARM_CATEGORY_SEXUALLY_EXPLICIT: 9, HARM_CATEGORY_DANGEROUS_CONTENT: 10, HARM_CATEGORY_CIVIC_INTEGRITY: 11 };
         const THR = { BLOCK_LOW_AND_ABOVE: 1, BLOCK_MEDIUM_AND_ABOVE: 2, BLOCK_ONLY_HIGH: 3, BLOCK_NONE: 4, OFF: 5 };
@@ -555,7 +598,7 @@ return window.__tb?'ok':'wait';})()`;
             let gcbBk; const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise(rs => { gcbBk = setTimeout(() => rs(JSON.stringify({ s: 504, t: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_NO_RESPONSE', message: '浏览器页面超过 ' + Math.round((GCB_HARD_MS + 30000) / 60000) + ' 分钟没有返回，已主动中止，请重试。' } }) })), GCB_HARD_MS + 30000); })]).finally(() => clearTimeout(gcbBk)); // backstop only: Google cuts at ~600s
             if (gcbRid) gcbOps.delete(gcbRid); const r = JSON.parse(raw);
             if (r.s === 499) { log.info('[GCBridge] ' + mm[1] + ' upstream call ' + gcbOp + ' cancelled after ' + (Date.now() - gcbT0) + 'ms'); return route.abort().catch(() => {}); }
-            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
+            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' ' + String(r.t).slice(0, 300)); gcbOutcome(false, r.t); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
             const arr0 = JSON.parse(r.t); const isChunk = x => Array.isArray(x) && Array.isArray(x[0]) && Array.isArray(x[0][0]) && Array.isArray(x[0][0][0]) && x[0][0][0][1] === 'model'; const arr = Array.isArray(arr0) && arr0.some(isChunk) ? arr0 : (Array.isArray(arr0) && Array.isArray(arr0[0]) ? arr0[0] : []);
             const chunks = arr.map(convChunk).filter(c => c && c.candidates && c.candidates.length);
             let out;
@@ -563,10 +606,10 @@ return window.__tb?'ok':'wait';})()`;
             else out = JSON.stringify([JSON.stringify(merge(chunks))]);
             { const lf = (chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'; if (lf !== 'STOP') { try { const sh = v => v == null ? null : typeof v === 'string' ? 's' + v.length : Array.isArray(v) ? 'a' + JSON.stringify(v).length : typeof v; const raw = arr.filter(isChunk).map(m => (m[0] || []).map(c => [(Array.isArray(c && c[0] && c[0][0]) ? c[0][0] : []).map(p2 => Array.isArray(p2) ? p2.map((v, i) => v == null ? null : i + ':' + sh(v)).filter(Boolean).join('|') : sh(p2)).join(' ; '), 'cand=' + (Array.isArray(c) ? c.map((v, i) => v == null ? null : i + ':' + sh(v)).filter(Boolean).join('|') : sh(c))].join(' / ')).join(' || ')); log.warn('[GCBridge] shape ' + mm[1] + ' finish=' + lf + ' top=' + arr0.length + ' chunks=' + raw.length + ' :: ' + raw.slice(-3).join(' ## ').slice(0, 1500)); } catch (e) { log.warn('[GCBridge] shape failed ' + e.message); } } }
             { const lc = chunks[chunks.length - 1]; if (chunks.length && !(lc.candidates[0] && lc.candidates[0].finishReason)) { let chars = 0; for (const c of chunks) for (const p of ((c.candidates[0] && c.candidates[0].content && c.candidates[0].content.parts) || [])) { if (typeof p.text === 'string' && !p.thought) chars += p.text.length; const fa = p.functionCall && p.functionCall.args; if (fa && typeof fa.answer === 'string') chars += fa.answer.length; } const sec = Math.round((Date.now() - gcbT0) / 1000); log.warn('[GCBridge] ' + mm[1] + ' upstream cut: no finishReason after ' + sec + 's chunks=' + chunks.length + ' bytes=' + String(r.t || '').length + ' chars=' + chars); return route.fulfill({ status: 504, contentType: 'application/json; charset=UTF-8', body: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_CUT', message: 'Google 在约 ' + Math.max(1, Math.round(sec / 60)) + ' 分钟时断开连接，回答未写完（已生成约 ' + chars + ' 字被丢弃）。请重试，或让回答短一些。' } }) }); } }
-            log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' bytes=' + String(r.t || '').length + ' finish=' + ((chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'));
+            gcbOutcome(true); log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' bytes=' + String(r.t || '').length + ' finish=' + ((chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'));
             return route.fulfill({ status: 200, contentType: 'application/json+protobuf; charset=UTF-8', body: out });
           } catch (e) {
-            log.warn('[GCBridge] error ' + e.message);
+            log.warn('[GCBridge] error ' + e.message); gcbOutcome(false, e.message);
             return route.fulfill({ status: 500, contentType: 'application/json+protobuf; charset=UTF-8', body: JSON.stringify([13, 'GCBridge: ' + e.message]) });
           }
         });
@@ -574,6 +617,7 @@ return window.__tb?'ok':'wait';})()`;
       if (process.env.WORKER_ACCOUNT || process.env.CLIENT_SCRIPT_OBSERVE === '1') {
         const stopObservation = require('./observe-client-scripts').observe(this.page, record => {
           this.logger.info('[ClientScriptObservation] ' + JSON.stringify(record));
+          if (record && record.host === 'www.gstatic.com' && typeof record.sha256 === 'string') { this.gcbFrontend = record.sha256.slice(0, 12); if (this.gcbSigner) this.gcbSigner.frontend = this.gcbFrontend; }
         });
         this.page.once('close', () => { stopObservation().catch(() => {}); });
       }
