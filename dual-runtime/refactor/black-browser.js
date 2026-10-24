@@ -119,6 +119,7 @@ class RequestProcessor {
 
   execute(requestSpec, operationId) {
     const IDLE_TIMEOUT_DURATION = 0; // 0 = no request time limit
+    const LONG_ATTEMPT_MS = 540000; // attempts failing after 9+ min are Google's ~10 min cut: never retried
     const abortController = new AbortController();
     this.activeOperations.set(operationId, abortController);
 
@@ -135,6 +136,7 @@ class RequestProcessor {
 
     const attemptPromise = new Promise(async (resolve, reject) => {
       for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+        const attemptStartedAt = Date.now();
         try {
           if (abortController.signal.aborted) {
             throw new DOMException("Request cancelled", "AbortError");
@@ -168,6 +170,21 @@ class RequestProcessor {
         } catch (error) {
           if (error.name === "AbortError") {
             reject(error);
+            return;
+          }
+          // Google cuts a generation at ~600s. A failure after this long is that cut;
+          // a retry would hit the same wall (and the coordinator deadline), so fail now.
+          const attemptMs = Date.now() - attemptStartedAt;
+          if (attemptMs >= LONG_ATTEMPT_MS) {
+            const minutes = Math.max(1, Math.round(attemptMs / 60000));
+            Logger.output(
+              `❌ 请求尝试 #${attempt} 在 ${Math.round(attemptMs / 1000)} 秒后失败，判定为 Google 约 10 分钟中断，不再重试: ${String(error.message || "").substring(0, 160)}`
+            );
+            const cut = new Error(
+              `Google 在约 ${minutes} 分钟时中断了这次生成，回答未完成。已不再重试（重试同样会被中断）。请重试，或让回答短一些。`
+            );
+            cut.status = 504;
+            reject(cut);
             return;
           }
           const isNetworkError = error.message.includes("Failed to fetch");
