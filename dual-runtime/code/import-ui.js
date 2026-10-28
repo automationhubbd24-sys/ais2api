@@ -71,7 +71,7 @@ function saveImport(system,body,{tier,alias,update=false,mode}={}){
   system.authSource.initialIndices.push(index);
   system.authSource.availableIndices.push(index);
   system.authSource.accountNameMap.set(index,alias||"导入账号 "+index);
-  if(system.requestHandler)system.requestHandler.currentAuthIndex=index;
+  if(system.browserManager)system.browserManager.currentAuthIndex=index;
   system.logger.info("[Import] 新增账号 #"+index+"，尚未验证");
   return {index,updated:false,tier,alias,verified:false};
 }
