@@ -7,9 +7,11 @@ const Logger = {
       "." +
       new Date().getMilliseconds().toString().padStart(3, "0");
     console.log(`[ProxyClient] ${timestamp}`, ...messages);
-    const logElement = document.createElement("div");
-    logElement.textContent = `[${timestamp}] ${messages.join(" ")}`;
-    document.body.appendChild(logElement);
+    if (document.body) {
+      const logElement = document.createElement("div");
+      logElement.textContent = `[${timestamp}] ${messages.join(" ")}`;
+      document.body.appendChild(logElement);
+    }
   },
 };
 
