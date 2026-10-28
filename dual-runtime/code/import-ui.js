@@ -6,14 +6,17 @@ const httpError=(status,error,extra)=>Object.assign(Error(error),{status,body:{e
 // Validate a Playwright storage-state payload. Never echoes cookie values.
 function validate(d){
   const str=x=>typeof x==="string";
-  if(!d || !Array.isArray(d.cookies) || !d.cookies.length || d.cookies.length>200 || !Array.isArray(d.origins) || d.origins.length>20) throw Error("顶层结构无效：需要 cookies(1-200) 与 origins(1-20) 数组");
-  const cookies=d.cookies.map((c,i)=>{
-    if(!c || !str(c.name) || !c.name || c.name.length>256 || !str(c.value) || c.value.length>16384 ||
-       !str(c.domain) || !/^\.?([a-z0-9-]+\.)*google\.com$/i.test(c.domain) ||
+  if(!d || !Array.isArray(d.cookies) || !d.cookies.length || d.cookies.length>500 || !Array.isArray(d.origins) || d.origins.length>20) throw Error("顶层结构无效：需要 cookies 与 origins 数组");
+  const googleCookies=d.cookies.filter(c=>c&&str(c.domain)&&/^\.?([a-z0-9-]+\.)*google\.com$/i.test(c.domain));
+  if(!googleCookies.length || googleCookies.length>200) throw Error("没有找到有效的 google.com Cookie");
+  const cookies=googleCookies.map((c,i)=>{
+    const expires=c.session===true?-1:(c.expires??c.expirationDate??-1);
+    const sameSite={lax:"Lax",strict:"Strict",none:"None",no_restriction:"None",unspecified:"Lax"}[String(c.sameSite??"unspecified").toLowerCase()];
+    if(!str(c.name) || !c.name || c.name.length>256 || !str(c.value) || c.value.length>16384 ||
        !str(c.path) || !c.path.startsWith("/") || c.path.length>2048 ||
-       !Number.isFinite(c.expires) || c.expires<-1 || typeof c.httpOnly!=="boolean" ||
-       typeof c.secure!=="boolean" || !["Lax","Strict","None"].includes(c.sameSite)) throw Error("Cookie #"+(i+1)+" 字段无效(需name/value/domain=google.com子域/path/expires秒/httpOnly/secure/sameSite)");
-    return {name:c.name,value:c.value,domain:c.domain,path:c.path,expires:c.expires,httpOnly:c.httpOnly,secure:c.secure,sameSite:c.sameSite};
+       !Number.isFinite(expires) || expires<-1 || typeof c.httpOnly!=="boolean" ||
+       typeof c.secure!=="boolean" || !sameSite) throw Error("Google Cookie #"+(i+1)+" 字段无效");
+    return {name:c.name,value:c.value,domain:c.domain,path:c.path,expires,httpOnly:c.httpOnly,secure:c.secure,sameSite};
   });
   const origins=d.origins.map(o=>{
     if(!o || !["https://aistudio.google.com","https://ai.studio","https://accounts.google.com"].includes(o.origin) || !Array.isArray(o.localStorage) || o.localStorage.length>200) throw Error("origins.origin 只允许 aistudio.google.com / ai.studio / accounts.google.com");
