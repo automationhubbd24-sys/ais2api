@@ -8,7 +8,7 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl tar xvfb fonts-liberation \
+    ca-certificates curl tar unzip xvfb fonts-liberation \
     libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 \
     libcairo2 libcups2 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0 \
     libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 \
@@ -21,25 +21,19 @@ COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund \
     && npm cache clean --force
 
-# By default, resolve the browser bundle from the latest project release.
-# Override CAMOUFOX_URL only when a different bundle is required.
-ARG CAMOUFOX_RELEASE_REPOSITORY=ellinalopez/cloud-studio
-ARG CAMOUFOX_URL=
+# Override CAMOUFOX_URL in Coolify only to pin a different browser release.
+ARG CAMOUFOX_URL=https://github.com/daijro/camoufox/releases/download/v150.0.2-beta.25/camoufox-150.0.2-alpha.26-lin.x86_64.zip
 
 RUN set -eux; \
-    if [ -z "${CAMOUFOX_URL}" ]; then \
-      CAMOUFOX_URL="$(curl --fail --location --retry 3 \
-        "https://api.github.com/repos/${CAMOUFOX_RELEASE_REPOSITORY}/releases/latest" \
-        | sed -n 's/.*"browser_download_url": *"\([^"]*camoufox-linux\.tar\.gz\)".*/\1/p' \
-        | head -n 1)"; \
-    fi; \
-    test -n "${CAMOUFOX_URL}" || \
-      (echo "No camoufox-linux.tar.gz asset found. Set CAMOUFOX_URL as a build variable." >&2; exit 1); \
     curl --fail --location --retry 3 \
-      "${CAMOUFOX_URL}" -o /tmp/camoufox-linux.tar.gz; \
-    tar -xzf /tmp/camoufox-linux.tar.gz -C /app; \
-    rm -f /tmp/camoufox-linux.tar.gz; \
-    test -f /app/camoufox-linux/camoufox; \
+      "${CAMOUFOX_URL}" -o /tmp/camoufox.zip; \
+    mkdir -p /tmp/camoufox-extract; \
+    unzip -q /tmp/camoufox.zip -d /tmp/camoufox-extract; \
+    CAMOUFOX_BINARY="$(find /tmp/camoufox-extract -type f -name camoufox -perm /111 | head -n 1)"; \
+    test -n "${CAMOUFOX_BINARY}"; \
+    mkdir -p /app/camoufox-linux; \
+    cp -a "$(dirname "${CAMOUFOX_BINARY}")/." /app/camoufox-linux/; \
+    rm -rf /tmp/camoufox.zip /tmp/camoufox-extract; \
     chmod +x /app/camoufox-linux/camoufox
 
 # Copy runtime files from their current repository locations.
