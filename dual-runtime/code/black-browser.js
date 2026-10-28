@@ -234,6 +234,7 @@ class RequestProcessor {
     ) {
       try {
         let bodyObj = JSON.parse(requestSpec.body);
+        delete bodyObj.__aisRid;
 
         // --- 模块1：智能过滤 (保留) ---
         const isImageModel =
