@@ -5,8 +5,9 @@ const SESSION_NAMES=["SID","__Secure-1PSID","__Secure-3PSID"];
 const httpError=(status,error,extra)=>Object.assign(Error(error),{status,body:{error,...(extra||{})}});
 // Validate a Playwright storage-state payload. Never echoes cookie values.
 function validate(d){
-  const str=x=>typeof x==="string";
-  if(!d || !Array.isArray(d.cookies) || !d.cookies.length || d.cookies.length>500 || !Array.isArray(d.origins) || d.origins.length>20) throw Error("顶层结构无效：需要 cookies 与 origins 数组");
+   const str=x=>typeof x==="string";
+   if(Array.isArray(d)) d={cookies:d,origins:[]};
+   if(!d || !Array.isArray(d.cookies) || !d.cookies.length || d.cookies.length>500 || !Array.isArray(d.origins) || d.origins.length>20) throw Error("顶层结构无效：需要 cookies 与 origins 数组");
   const googleCookies=d.cookies.filter(c=>c&&str(c.domain)&&/^\.?([a-z0-9-]+\.)*google\.com$/i.test(c.domain));
   if(!googleCookies.length || googleCookies.length>200) throw Error("没有找到有效的 google.com Cookie");
   const cookies=googleCookies.map((c,i)=>{
