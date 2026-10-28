@@ -502,7 +502,6 @@ class ProxySystem extends EventTarget {
 
 async function initializeProxySystem() {
   // 清理旧的日志
-  document.body.innerHTML = "";
   const proxySystem = new ProxySystem();
   try {
     await proxySystem.initialize();
