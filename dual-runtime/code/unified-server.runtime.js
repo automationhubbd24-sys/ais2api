@@ -417,6 +417,7 @@ class BrowserManager {
         storageState: storageStateObject,
         viewport: null,
       });
+      await this.context.addInitScript({ content: buildScriptContent });
       if (process.env.WORKER_ACCOUNT) {
         await require('./verified-client-route').install(
           this.context, buildScriptContent,
@@ -678,7 +679,6 @@ return window.__tb?'ok':'wait';})()`;
         timeout: 180000,
         waitUntil: "domcontentloaded",
       });
-      await this.page.addScriptTag({ content: buildScriptContent });
       this.logger.info("[Browser] 页面加载完成。");
 
       await this.page.waitForTimeout(3000);
