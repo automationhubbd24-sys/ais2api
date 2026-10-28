@@ -40,6 +40,7 @@ RUN set -eux; \
 COPY dual-runtime/code/unified-server.runtime.js ./unified-server.js
 COPY dual-runtime/code/observe-client-scripts.js ./observe-client-scripts.js
 COPY dual-runtime/code/stability.js ./stability.js
+COPY dual-runtime/code/operation-tracker.js ./operation-tracker.js
 COPY dual-runtime/code/import-ui.js ./import-ui.js
 COPY dual-runtime/code/import-ui.html ./import-ui.html
 COPY dual-runtime/code/models.json ./models.json
