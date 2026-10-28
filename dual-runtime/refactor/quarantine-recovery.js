@@ -67,7 +67,7 @@ class QuarantineRecovery {
      const current=await this.driver.describe(slot);
      if(!this.owned(current,account,failed.id)||!this.stopped(current)||
         !this.idle(slot,state,owner,account))throw Error('Failed login closure changed');
-     this.dispatch.accountFlags[account]||={status:'invalid',reason:'login_required',at:Date.now()};
+     this.dispatch.accountFlags[account]||={status:'invalid',reason:'login_required',at:Date.now(),slot};
      this.dispatch.checkpoint();
      const target=this.dispatch.rotationCandidate(undefined,undefined,slot);
      if(target===undefined)return;

@@ -1,6 +1,6 @@
 const {AsyncLocalStorage}=require("async_hooks");
 class SerialGate {
- constructor(limit=2){this.limit=limit;this.activeCount=0;this.queue=[];this.context=new AsyncLocalStorage();}
+ constructor(limit=10){this.limit=limit;this.activeCount=0;this.queue=[];this.context=new AsyncLocalStorage();}
  run(fn,valid=()=>true){
   if(this.context.getStore()===this)return Promise.resolve().then(fn);
   if(this.queue.length>=10)return Promise.reject(Object.assign(Error("请求队列已满"),{status:503}));
@@ -103,6 +103,6 @@ function install(h){
    this.logger.warn("[Stability] 账号 #"+this.currentAuthIndex+(perModel?" 模型 "+model:"")+" 状态 "+status+"；冷却 "+seconds+" 秒，不因错误换号");
   }
  };
- h.logger.info("[Stability] 并发2，排队上限10，等待120秒；按请求隔离取消");
+ h.logger.info("[Stability] 并发上限"+gate.limit+"（实际并发由协调器按实例设置控制），排队上限10，等待120秒；按请求隔离取消");
 }
 module.exports={install,SerialGate,requestModel};

@@ -17,6 +17,8 @@ async function main(){
  for(const r of ['GET /api/client-script','GET /api/target-app','POST /api/target-app','GET /api/run-mode','POST /api/run-mode','GET /api/ws/config','POST /api/ws/config','POST /api/login-proxy','POST /api/ws/start','GET /api/ws/job','POST /api/ws/cancel'])allowed.add(r);
  for(const m of ['GET','POST'])allowed.add(m+' /api/login/job');
  allowed.add('POST /api/accounts/delete');
+ allowed.add('GET /api/relogin');
+ allowed.add('POST /api/relogin/retry');
  allowed.add('GET /api/proxies');
  allowed.add('POST /api/proxies');
  allowed.add('POST /api/proxies/apply');
@@ -217,6 +219,13 @@ require('./console-routes').install(dashboard);
   const r=await loginCall('POST',p+'/'+action,action==='input'?{value:String(req.body.value||'')}:{});
   res.status(r.status).json(r.body);
  });
+ dashboard.get('/api/relogin',async(req,res)=>{const r=await loginCall('GET','/login/nightly');res.status(r.status||503).json(r.body||{error:'登录服务不可用'});});
+ dashboard.post('/api/relogin/retry',async(req,res)=>{
+  try{const o=new URL(req.headers.origin);if(!['https:','http:'].includes(o.protocol)||o.host!==req.headers.host)throw Error();}
+  catch{return res.status(403).json({error:'Same-origin browser request required'});}
+  const id=req.body?.id;if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'账号编号无效'});
+  const r=await loginCall('POST','/login/nightly/retry',{id});res.status(r.status||503).json(r.body||{error:'登录服务不可用'});
+ });
  dashboard.get('/api/client-script',(req,res)=>{
   const up=http.request({host:'127.0.0.1',port:8890,path:'/internal/client-script',method:'GET',agent:false,headers:{Authorization:'Bearer '+system.config.apiKeys[0]}},r=>{
    res.status(r.statusCode===200?200:503).type('text/plain; charset=utf-8');r.pipe(res);});
@@ -226,6 +235,11 @@ require('./console-routes').install(dashboard);
  dashboard.post('/api/target-app',async(req,res)=>{if(!loginGuard(req,res))return;
   const b=req.body||{};const payload=b.action==='apply'?{action:'apply'}:{url:typeof b.url==='string'?b.url.slice(0,300):''};
   const r=await call('POST','/internal/target-app',payload);res.status(r.status).json(r.body);});
+ allowed.add('GET /api/concurrency');allowed.add('POST /api/concurrency');
+ dashboard.get('/api/concurrency',async(req,res)=>{const r=await call('GET','/internal/concurrency');res.status(r.status).json(r.body);});
+ dashboard.post('/api/concurrency',async(req,res)=>{if(!loginGuard(req,res))return;
+  const b=req.body||{},p={};for(const s of ['A','B'])if(b[s]!==undefined)p[s]=Number(b[s]);
+  const r=await call('POST','/internal/concurrency',p);res.status(r.status).json(r.body);});
  dashboard.get('/api/run-mode',async(req,res)=>{const r=await call('GET','/internal/run-mode');res.status(r.status).json(r.body);});
  dashboard.post('/api/run-mode',async(req,res)=>{if(!loginGuard(req,res))return;
   if(typeof req.body?.single!=='boolean')return res.status(400).json({error:'参数无效'});

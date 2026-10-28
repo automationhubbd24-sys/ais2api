@@ -92,7 +92,7 @@ class BrowserLease{
   }
   return this.modeStatus();
  }
- async acquire(owner){
+ async acquire(owner,prefer){
   if(this.lease)throw fail('已有登录占用浏览器名额');
   if(this.switching)throw fail('运行模式切换中，请稍候');
   if(this.isStopping()||this.dispatch.halted)throw fail('调度不可用');
@@ -103,6 +103,11 @@ class BrowserLease{
   }else{
    // Pause an unusable worker first; otherwise B. Never refuse because of readiness.
    slot=['B','A'].find(x=>!this.dispatch.slots.get(x).ready)||'B';
+   // Re-login on the worker where the account failed (same network and egress), only while the other one serves.
+   if(prefer==='A'||prefer==='B'){
+    if(!this.dispatch.slots.get(this.other(prefer)).ready)throw fail('实例 '+this.other(prefer)+' 未就绪，暂不暂停实例 '+prefer);
+    slot=prefer;
+   }
   }
   const op=this.dispatch.operations.acquire(slot,'login');
   if(!op)throw fail('实例正在执行其他操作');

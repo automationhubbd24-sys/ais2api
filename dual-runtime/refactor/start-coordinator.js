@@ -40,6 +40,8 @@ async function main(){
  let browserLeaseRef=null;
  const tiers=new AccountTiers({authDir:'/opt/ais2api/auth',file:path.join(root,'ultra-mode.json'),isSingle:()=>browserLeaseRef?.mode?.single===true});
  dispatch.slotAllows=(slot,id)=>tiers.allowed(slot,id);
+ const concurrency=new (require('./slot-concurrency').SlotConcurrency)(path.join(root,'concurrency.json'));
+ dispatch.slotLimit=slot=>concurrency.get(slot);
  dispatch.slotRule=slot=>!tiers.active()?'':slot===tiers.mode.slot?'实例 '+slot+' 只用 Pro/Ultra 账号':'实例 '+slot+' 不使用 Pro/Ultra 账号';
  routing.isUltra=id=>tiers.isUltra(id);
  routing.isPremium=id=>tiers.isPremium(id);
@@ -51,6 +53,9 @@ async function main(){
  const cleanup=new RetiredResourceCleanup({dispatch,driver,root,options:cfg.retiredCleanup===undefined?{}:cfg.retiredCleanup,
   isStopping:()=>stopping,hasWaiting:()=>scheduler.queue.length>0});
  rotation.onRetired=(slot,marker)=>cleanup.record(slot,marker);
+ const frontendGuard=new (require('./frontend-guard').FrontendGuard)({file:path.join(root,'frontend-verified.json')});
+ dispatch.onWorkerStatus=(slot,status)=>frontendGuard.observe(slot,status);
+ rotation.frontendHold=slot=>frontendGuard.hold(slot);
  const {CoordinatorMonitor}=require('./coordinator-monitor');
  const monitor=new CoordinatorMonitor({dispatch,client,catalogs,recovery,rotation,routing,scheduler});
  const {ConsoleAuth,StreamMode}=require('./console-auth');
@@ -88,11 +93,12 @@ async function main(){
   analytics:recordedForward.status(),
   gatewayRepair:{...sanitizeStats},
   retiredCleanup:cleanup.status(),
+  frontendGuard:frontendGuard.status(),
   quotaMode:"per-account-per-model",quotaLimits:require('./model-quota-ledger').TIER_LIMITS,
   slots:Object.fromEntries([...dispatch.slots].map(([slot,s])=>[slot,{
    account:dispatch.pool.slots.get(slot)?.current,
    pending:dispatch.pool.slots.get(slot)?.pending?.id,
-   active:s.active,ready:s.ready,
+   active:s.active,ready:s.ready,unready:s.ready?null:(s.unready||null),frontendHold:frontendGuard.hold(slot),
    quota:Number.isSafeInteger(dispatch.pool.slots.get(slot)?.current)?dispatch.quotas.summary(dispatch.pool.slots.get(slot).current,policyStore.policies):undefined,
    healthCheck:monitor.status(slot),workerEpoch:s.workerEpoch,workerHealth:s.workerHealth,pendingRetirements:Object.keys(s.retirements||{}).length,
    pendingExecutions:Object.values(s.executions||{}).map(t=>({id:t.id,phase:t.phase,createdAt:t.createdAt})),
@@ -109,7 +115,7 @@ async function main(){
    const cooldownUntil=dispatch.pool.cooldowns.get(id)||0;
    const flag=dispatch.accountFlags[id];
    return {cookie:cookieStatus(id,owner,flag),authStatus:flag?.status||'unknown',invalidReason:flag?.reason,
-    invalidAt:flag?.at,canDelete:flag?.status!=='deleted'&&!accountOccupied(id),
+    invalidAt:flag?.at,invalidSlot:flag?.slot,canDelete:flag?.status!=='deleted'&&!accountOccupied(id),
     id,name,alias:names.alias,accountName:names.accountName,tier:tiers.tier(id),owner:owner||null,cooldownUntil,quota:dispatch.quotas.summary(id,policyStore.policies)};
   })
  });
@@ -128,7 +134,7 @@ async function main(){
  monitor.tick();
  const actions={
   leaseStatus:()=>browserLease.status(),
-  leaseAcquire:body=>browserLease.acquire(body?.owner),
+  leaseAcquire:body=>browserLease.acquire(body?.owner,body?.slot),
   leaseRelease:()=>browserLease.release(false),
   runMode:()=>browserLease.modeStatus(),
   ultraMode:()=>tiers.status(dispatch.pool.ids),
@@ -138,6 +144,8 @@ async function main(){
   setAccountTier:body=>{const id=Number(body?.id);if(!dispatch.pool.ids.includes(id))throw Object.assign(Error('账号 '+body?.id+' 不在账号池'),{statusCode:404});
    const r=tiers.setTier(id,body?.tier);monitor.tick();return r;},
   setRunMode:body=>browserLease.setMode(body),
+  concurrency:()=>concurrency.status(),
+  setConcurrency:body=>{const r=concurrency.set(body);console.log('[Coordinator] per-slot concurrency set to A='+r.A+' B='+r.B);monitor.tick();return r;},
   targetApp:()=>targetApp.status(),
   saveTargetApp:body=>targetApp.save(body),
   applyTargetApp:()=>targetApp.apply(),
@@ -295,7 +303,7 @@ async function main(){
  const timer=setInterval(()=>{monitor.tick();applyMode().catch(()=>{});},2000);
  const modeTimer=setInterval(()=>browserLease.tick(),5000);modeTimer.unref();
  const cleanupTimer=setInterval(()=>cleanup.tick(),60000);cleanupTimer.unref();
- console.log('[Coordinator] loopback 8890; protocol v2; per-slot concurrency 2; explicit model quotas');
+ console.log('[Coordinator] loopback 8890; protocol v2; per-slot concurrency A='+concurrency.get('A')+' B='+concurrency.get('B')+'; explicit model quotas');
  async function shutdown(){
   if(stopping)return;stopping=true;clearInterval(timer);clearInterval(haltTimer);clearInterval(authTimer);clearInterval(cleanupTimer);cleanup.close();monitor.close();scheduler.close();
   server.close();

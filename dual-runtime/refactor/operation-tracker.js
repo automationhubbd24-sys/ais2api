@@ -10,7 +10,7 @@ class OperationTracker {
   if(entry){this.unconfirmed.add(id);entry.done(false);}
  }
  begin(id){
-  if(this.quarantined || this.active.size>=2)throw Error('Worker unavailable');
+  if(this.quarantined || this.active.size>=10)throw Error('Worker unavailable');
   if(typeof id!=='string' || !id)throw Error('Invalid request ID');
   if(this.active.has(id))throw Error("Duplicate operation");
   let done;

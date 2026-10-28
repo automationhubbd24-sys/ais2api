@@ -7,6 +7,7 @@ class DispatchCore {
   this.accountFlags={};this.quotas=new ModelQuotaLedger();this.quotaExhausted=()=>false;
   this.slots=new Map(['A','B'].map(slot=>[slot,{active:0,requests:new Set(),executions:{},retirements:{},usesFlash37:0,usesFlash38:0,usesPro:0,windowStart:0,ready:false}]));
   this.cursor=0;this.globalUntil=0;this.operations=new SlotOperations();this.slotAllows=()=>true;
+  this.slotLimit=()=>2; // per-slot concurrency; replaced by the persisted setting at startup
  }
  checkpoint(){
   try{this.persist(this);}catch(e){this.halted=true;throw e;}
@@ -28,9 +29,23 @@ class DispatchCore {
    pendingCompletions:Number.isSafeInteger(status.pendingCompletions)?status.pendingCompletions:null};
   Object.assign(s.workerHealth,{executionProtocol:status.executionProtocol,busy:status.busy,
    activeRequests:status.activeRequests,browserOperations:status.browserOperations,quarantined:status.quarantined});
+  const sig=status.signer&&typeof status.signer==='object'?status.signer:null,str=(v,n)=>typeof v==='string'?v.slice(0,n):null,num=v=>Number.isFinite(v)?v:null;
+  s.workerHealth.frontend=typeof status.frontend==='string'&&/^[0-9a-f]{12}$/.test(status.frontend)?status.frontend:null;
+  s.workerHealth.signer=sig?{state:str(sig.state,16),reason:str(sig.reason,40),message:str(sig.message,80),detail:str(sig.detail,200),since:num(sig.since),okRequests:num(sig.okRequests),lastOkAt:num(sig.lastOkAt),
+   names:sig.names&&typeof sig.names==='object'?{hash:str(sig.names.hash,24),sign:str(sig.names.sign,24),service:str(sig.names.service,24)}:null}:null;
   const records=Object.values(s.executions||{});
   const unresolved=Boolean(s.rotation||s.recovery||s.proxyApply)||Object.keys(s.retirements||{}).length>0 || records.length!==s.requests.size || records.some(t=>t.phase!=="running"||t.workerEpoch!==s.workerEpoch);
-  s.ready=validEpoch && !unresolved && !this.operations.has(slot) && status.account===owner?.current && status.ready===true && status.busy===false && status.browserOperations===0 && status.quarantined===false;
+  s.ready=validEpoch && !unresolved && !this.operations.has(slot) && status.account===owner?.current && status.ready===true && Number.isSafeInteger(status.browserOperations) && status.browserOperations<this.limitOf(slot) && status.quarantined===false;
+  const wu=status.unready&&typeof status.unready==='object'&&/^[a-z_]{1,40}$/.test(status.unready.reason||'')?
+   {reason:status.unready.reason,message:str(status.unready.message,80)||status.unready.reason,since:num(status.unready.since)}:null;
+  s.unready=s.ready?null:!validEpoch?{reason:'epoch_unconfirmed',message:'实例身份未确认'}:
+   status.account!==owner?.current?{reason:'account_mismatch',message:'实例账号与分配不一致'}:
+   status.ready!==true?(wu||{reason:'worker_unready',message:'实例未就绪'}):
+   status.quarantined!==false?{reason:'quarantined',message:'实例已隔离'}:
+   this.operations.has(slot)?{reason:'operation',message:'正在执行维护操作'}:
+   unresolved?{reason:'unresolved',message:'有执行或轮换待核实'}:
+   {reason:'at_capacity',message:'并发已满'};
+  try{this.onWorkerStatus?.(slot,status,s);}catch{}
  }
  acquire(id,plan,eligible=()=>true){
   if(!/^[a-f0-9-]{36}$/.test(id||""))throw Error("Invalid request ID");
@@ -44,7 +59,7 @@ class DispatchCore {
   const now=Date.now();
   for(let n=0;n<2;n++){
    const pos=(this.cursor+n)%2,slot=['A','B'][pos],s=this.slots.get(slot),owner=this.pool.slots.get(slot);
-   if(Object.keys(s.retirements||{}).length>=100||this.operations.has(slot)||s.active>=2||s.proxyApply||s.ready===false||owner?.pending||owner?.current===undefined)continue;
+   if(Object.keys(s.retirements||{}).length>=100||this.operations.has(slot)||s.active>=this.limitOf(slot)||s.proxyApply||s.ready===false||owner?.pending||owner?.current===undefined)continue;
    if(this.accountFlags[owner.current]||!s.workerEpoch||!eligible(slot,owner.current))continue;
    // Quota is owned by account and canonical model, not slot.
    if(!this.quotas.view(owner.current,model,kind,now).allowed)continue;
@@ -92,6 +107,7 @@ class DispatchCore {
   }
   return target;
  }
+ limitOf(slot){const n=Number(this.slotLimit(slot));return Number.isSafeInteger(n)&&n>=1&&n<=10?n:2;}
  rotationIdle(slot){
   const s=this.slots.get(slot),o=this.pool.slots.get(slot);
   if(this.halted||!s||!o||o.pending||s.active||s.requests.size||s.rotation||s.recovery||s.proxyApply||

@@ -44,6 +44,7 @@ class RotationController {
   const state=this.dispatch.slots.get(slot),owner=this.dispatch.pool.slots.get(slot);
   if(this.dispatch.halted)return {available:false,reason:'Coordinator halted'};
   const gate=this.gate(slot);if(gate)return {available:false,reason:gate};
+  const fh=!this.forced.has(slot)&&this.frontendHold?.(slot);if(fh)return {available:false,reason:fh.message,frontendHold:fh};
   if(!state||!owner||owner.pending||!this.dispatch.rotationIdle(slot)||state.active||state.requests.size||
      Object.keys(state.executions||{}).length||Object.keys(state.retirements||{}).length||
      this.running.has(slot)||this.dispatch.operations.has(slot)||this.failures.has(slot))
@@ -58,6 +59,7 @@ class RotationController {
  }
  async rotate(slot,manual,target,plan){
   const gate=this.gate(slot);if(gate)throw Error(gate);
+  {const fh=!this.forced.has(slot)&&this.frontendHold?.(slot);if(fh)throw Object.assign(Error(fh.message),{code:'FRONTEND_HOLD'});}
   if(this.running.has(slot))throw Error('Slot rotation or recovery is running');
   if(this.failures.has(slot))throw Error('Manual reconciliation required');
   const lease=this.dispatch.operations.acquire(slot,'rotation');
@@ -109,7 +111,7 @@ class RotationController {
   if(description.Id===marker.oldContainerId||description.Config?.Labels?.['operit.account']!==String(ticket.id)||
      description.State?.Running!==false||description.State?.Pid!==0||description.State?.Status!=='exited')
    throw Error('Failed target closure unconfirmed');
-  d.accountFlags[ticket.id]||={status:'invalid',reason:'login_required',at:Date.now()};
+  d.accountFlags[ticket.id]||={status:'invalid',reason:'login_required',at:Date.now(),slot};
   d.checkpoint();
   this.releaseGate(slot,ticket.token);
   if(this.gate(slot))return false;

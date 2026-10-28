@@ -15,6 +15,7 @@ const AT_TOOL_NAME = "emit_answer";
 const AT_MAX_ATTEMPTS = 3;
 // After this much time since the request arrived, an unfinished round fails instead of continuing.
 const AT_CONTINUE_DEADLINE_MS = 360000;
+const AT_MAX_RETRIES = 3;
 const AT_SYSTEM_HINT =
   "\n\n[SYSTEM CONSTRAINT] You have a tool named emit_answer. " +
   "When you are ready to output your final complete answer, you MUST call " +
@@ -145,7 +146,7 @@ function atBlockPayload(info, httpStatus) {
   if (info.promptTokens !== null) payload.usage = { prompt_tokens: info.promptTokens };
   return payload;
 }
-  return { AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, AT_CONTINUE_DEADLINE_MS, fixTrailingModelTurn, atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody, atBlockInfo, atBlockMessage, atBlockPayload, atFinishPayload };
+  return { AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, AT_CONTINUE_DEADLINE_MS, AT_MAX_RETRIES, fixTrailingModelTurn, atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody, atBlockInfo, atBlockMessage, atBlockPayload, atFinishPayload };
 })();
 
 // ===================================================================================
@@ -425,21 +426,65 @@ class BrowserManager {
       this.page = await this.context.newPage();
       // ---- GenerateContent bridge: Google rejects POST via ProxyUnaryCall/ProxyStreamedCall; call MakerSuite GenerateContent directly ----
       {
-        const GCB_INSTALL = `(function(){var M=window.default_MakerSuite;if(!M||!M.Cn||!M.GB)return 'nom';
-if(!M.Cn.__gcb){var o=M.Cn;var f=function(a,b){if(a&&a.mb)window.__tb=a;return o.apply(this,arguments)};f.__gcb=1;M.Cn=f;}
-if(!window.__gcCall||window.__gcCall.v!==5){window.__gcCall=async function(body,ht,key,hx){hx=hx||{};var M=window.default_MakerSuite,tb=window.__tb;if(!tb)return JSON.stringify({s:503,t:'[14,"token service not ready"]'});
-var md=tb.getMetadata()||{};var waa=md['X-Goog-Api-Key'];if(!key){var mb=tb.mb||{};for(var k in mb){var v=mb[k];if(typeof v==='string'&&/^AIza[0-9A-Za-z_-]{30,}$/.test(v)&&v!==waa){key=v;break;}}}
+        const GCB_INSTALL = `(function(){var M=window.default_MakerSuite;if(!M)return 'nom';if(!window.__gcS||window.__gcSm!==M){var S=null,sn='';for(var sk in M){var sf;try{sf=M[sk];}catch(e){continue;}if(typeof sf!=='function')continue;var ss;try{ss=String(sf);}catch(e){continue;}if(ss.length<400&&ss.indexOf('.snapshot(')>=0&&ss.indexOf('content:b}')>=0){S=sf;sn=sk;break;}}if(!S)return 'nosnap';window.__gcS=S;window.__gcSn=sn;window.__gcSm=M;}if(!window.__gcH||window.__gcHm!==M){var H=null,hn='';var hok=function(f){if(typeof f!=='function')return false;var hs;try{hs=String(f);}catch(e){return false;}return !/^\s*class\b/.test(hs)&&hs.length<300&&hs.indexOf('TextEncoder')>=0&&hs.indexOf('.digest()')>=0&&hs.indexOf('subtle')<0;};var hg;try{hg=M.GB;}catch(e){}if(hok(hg)){H=hg;hn='GB';}else{for(var hk in M){var hf;try{hf=M[hk];}catch(e){continue;}if(hok(hf)){H=hf;hn=hk;break;}}}if(!H)return 'nohash';window.__gcH=H;window.__gcHn=hn;window.__gcHm=M;}
+if(!window.__gmHook){window.__gmHook=1;var gc=0;for(var gk in M){var C;try{C=M[gk];}catch(e){continue;}if(typeof C!=='function'||!C.prototype)continue;var gd;try{gd=Object.getOwnPropertyDescriptor(C.prototype,'getMetadata');}catch(e){continue;}if(!gd||typeof gd.value!=='function')continue;var gs='';try{gs=String(gd.value);}catch(e){}if(gs.indexOf('AIzaSyBGb5fGAyC')<0)continue;(function(C,og,nm){C.prototype.getMetadata=function(){try{if(this&&window.__tb!==this){window.__tb=this;window.__tbVia=nm;}if(!window.__gmSeen&&this){var z=[];for(var q in this)z.push(q);window.__gmSeen=nm+':'+z.slice(0,20).join(',');}}catch(e){}return og.apply(this,arguments);};})(C,gd.value,gk);gc++;}window.__gmCnt=gc;}if(!window.__gcS.__gcb){var o=window.__gcS;var f=function(a,b){try{if(a&&typeof a==='object'){var ks=[];for(var q in a)ks.push(q);window.__cnSeen=ks.slice(0,40).join(',')+' gm='+(typeof a.getMetadata);}}catch(e){}if(a&&(a.mb||(a.A&&typeof a.A.snapshot==='function'&&typeof a.getMetadata==='function'))){window.__tb=a;window.__tbVia='Cn';}return o.apply(this,arguments)};f.__gcb=1;M[window.__gcSn]=f;window.__gcS=f;}
+if(!window.__tb&&window.__gmHook){var vn=Date.now();if(!window.__gcVisAt||vn-window.__gcVisAt>30000){window.__gcVisAt=vn;try{var vd=document,vst='hidden';Object.defineProperty(vd,'visibilityState',{configurable:true,get:function(){return vst;}});Object.defineProperty(vd,'hidden',{configurable:true,get:function(){return vst==='hidden';}});vd.dispatchEvent(new Event('visibilitychange'));vst='visible';vd.dispatchEvent(new Event('visibilitychange'));delete vd.visibilityState;delete vd.hidden;window.__gcVisN=(window.__gcVisN||0)+1;}catch(e){window.__gcVisErr=String(e&&e.message||e).slice(0,80);}}}
+if(!window.__gcCall||window.__gcCall.v!==7){window.__gcCall=async function(body,ht,key,hx){hx=hx||{};var M=window.default_MakerSuite,tb=window.__tb;if(!tb)return JSON.stringify({s:503,t:'[14,"token service not ready"]'});
+var md=tb.getMetadata()||{};var waa=md['X-Goog-Api-Key'];if(!key){var srcs=[];for(var sk in tb){try{if(tb[sk]&&typeof tb[sk]==='object')srcs.push(tb[sk]);}catch(e){}}for(var si=0;si<srcs.length&&!key;si++){var mb=srcs[si];for(var k in mb){var v;try{v=mb[k];}catch(e){continue;}if(typeof v==='string'&&/^AIza[0-9A-Za-z_-]{30,}$/.test(v)&&v!==waa){key=v;break;}}}}
 if(!key)return JSON.stringify({s:503,t:'[14,"page api key not found"]'});
 var base='https://alkalimakersuite-pa.clients6.google.com';var au=md['X-Goog-AuthUser']!=null?String(md['X-Goog-AuthUser']):'0';
-body[4]=await M.Cn(tb,await M.GB(ht));
+body[4]=await window.__gcS(tb,await window.__gcH(ht));if(typeof body[4]!=='string')return JSON.stringify({s:503,t:'[14,"snapshot not a string"]'});
 var hd={'content-type':'application/json+protobuf','x-user-agent':'grpc-web-javascript/0.1','x-goog-api-key':key,'authorization':md.Authorization,'x-goog-authuser':au};var tier=hx.tier||null;if(!tier){if(window.__gcTier===undefined){try{var tr=await fetch(base+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GetAiStudioBenefitTier',{method:'POST',credentials:'include',headers:hd,body:'[]'});var tj=tr.ok?JSON.parse(await tr.text()):null;var tv=Array.isArray(tj)?tj[0]:null;window.__gcTier=tv===1?'TIER1':tv===2?'TIER2':null;}catch(e){window.__gcTier=null;}}tier=window.__gcTier;}if(tier)hd['x-aistudio-g1-tier']=tier;if(hx.ext)hd['x-goog-ext-519733851-bin']=hx.ext;var ac=new AbortController(),hm=hx.hardMs||660000,wd=setTimeout(function(){ac.abort();},hm);var ab_=window.__gcAb=window.__gcAb||{};if(hx.op)ab_[hx.op]=ac;try{var r=await fetch(base+'/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent',{method:'POST',credentials:'include',headers:hd,body:JSON.stringify(body),signal:ac.signal});var tx=await r.text();}catch(e){if(ac.__cancel)return JSON.stringify({s:499,t:'cancelled',tier:tier||''});var ab=ac.signal.aborted;return JSON.stringify({s:504,t:JSON.stringify({error:{code:504,status:ab?'UPSTREAM_NO_RESPONSE':'UPSTREAM_CONNECTION_LOST',message:ab?('Google 超过 '+Math.round(hm/60000)+' 分钟没有返回，已主动中止，请重试。'):('与 Google 的连接中途断开：'+String(e&&e.message||e)+'，请重试。')}}),tier:tier||''});}finally{clearTimeout(wd);if(hx.op)delete ab_[hx.op];}
-return JSON.stringify({s:r.status,t:tx,tier:tier||''});};window.__gcCall.v=5;window.__gcAbort=function(op){var c=window.__gcAb&&window.__gcAb[op];if(!c)return false;c.__cancel=true;c.abort();return true;};}
+return JSON.stringify({s:r.status,t:tx,tier:tier||''});};window.__gcCall.v=7;window.__gcAbort=function(op){var c=window.__gcAb&&window.__gcAb[op];if(!c)return false;c.__cancel=true;c.abort();return true;};}
 return window.__tb?'ok':'wait';})()`;
         const pg = this.page, log = this.logger;
         global.__gcbPage = pg; let gcbKey = null; const gcbHx = {}; const gcbWaa = 'AIzaSyBGb5fGAyC-pRcRU6MUHb__b_vKha71HRE'; const GCB_HARD_MS = Number(process.env.GCB_HARD_MS) || 660000; const gcbOps = new Map(); const gcbCancelled = new Set(); let gcbSeq = 0;
         this.gcbCancel = rid => { gcbCancelled.add(rid); setTimeout(() => gcbCancelled.delete(rid), 120000).unref?.(); const op = gcbOps.get(rid); if (!op) return false; gcbOps.delete(rid); log.info('[GCBridge] client cancelled ' + rid + '; aborting upstream call ' + op); pg.evaluate(o => window.wrappedJSObject.__gcAbort(o), op).catch(() => {}); return true; }; // Google itself cuts at ~600s
         this.context.on('request', r => { try { if (!/alkalimakersuite-pa\.clients6\.google\.com\/\$rpc\/.*MakerSuiteService\//.test(r.url())) return; const k = r.headers()['x-goog-api-key']; if (k && k !== gcbWaa && /^AIza/.test(k)) gcbKey = k; const h = r.headers(); if (h['x-aistudio-g1-tier']) gcbHx.tier = h['x-aistudio-g1-tier']; if (h['x-goog-ext-519733851-bin']) gcbHx.ext = h['x-goog-ext-519733851-bin']; } catch {} });
-        const gcbInstall = () => pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_INSTALL).catch(() => 'err');
+        const gcbInstall = () => pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_INSTALL).catch(e => 'err:' + String(e && e.message || e).slice(0, 120)).then(r => { const v = typeof r === 'string' ? r : JSON.stringify(r); try { gcbAssess(v); } catch (e) {} pg.evaluate(() => { try { const w = window.wrappedJSObject; return 'hash=' + (w.__gcHn || '-') + ' tb=' + (w.__tb ? 'yes' : 'no') + ' v=' + (w.__gcCall ? w.__gcCall.v : '-') + ' cn=' + (w.__cnSeen || '-') + ' gm=' + w.__gmCnt + ' via=' + (w.__tbVia || '-') + ' seen=' + (w.__gmSeen || '-') + ' snap=' + (w.__gcSn || '-') + ' vis=' + (w.__gcVisN || 0) + '' } catch (e) { return 'probe err ' + e.message; } }).then(x => { const k = v + ' ' + x; if (k !== gcbLast) { gcbLast = k; log.warn('[GCBridge] install result=' + String(v).slice(0, 80) + ' ' + String(x).slice(0, 900)); } }).catch(() => {}); return r; }); let gcbLast = null;
+        // ---- Signer self-check: readiness must include "can this page actually sign a request" ----
+        const GCB_SIGN_MSG = { frontend_object_missing: '找不到 AI Studio 前端对象', hash_fn_missing: '没找到哈希函数', signer_missing: '没找到签名函数', token_service_missing: '没拿到签名服务（已尝试自唤醒）', sign_probe_failed: '本地试签失败', frontend_incompatible: '连续签名报错，前端可能不兼容', install_error: '签名模块安装出错' };
+        const GCB_INSTALL_REASON = { nom: 'frontend_object_missing', nosnap: 'signer_missing', nohash: 'hash_fn_missing', wait: 'token_service_missing' };
+        const GCB_SIGN_ERR = /token service not ready|snapshot not a string|page api key not found|request_snapshot|__gcS|__gcH/;
+        const GCB_PROBE = `(async function(){var w=window,o={hash:w.__gcHn||null,sign:w.__gcSn||null,via:w.__tbVia||null};try{if(!w.__gcS||!w.__gcH||!w.__tb){o.r='missing';return JSON.stringify(o);}var h=await w.__gcH('ais2api signer self-check');var t=await Promise.race([w.__gcS(w.__tb,h),new Promise(function(r){setTimeout(function(){r(null);},10000);})]);o.r=t===null?'timeout':typeof t!=='string'?'type '+typeof t:t.length<16?'short '+t.length:'ok';}catch(e){o.r='err '+String(e&&e.message||e).slice(0,120);}return JSON.stringify(o);})()`;
+        this.gcbFrontend = null;
+        const gcbSig = this.gcbSigner = { state: 'checking', reason: null, message: '签名自检中', detail: null, since: Date.now(), pageAt: Date.now(), frontend: null, names: null, okRequests: 0, failStreak: 0, probe: null, probedAt: 0 };
+        let gcbProbing = false;
+        pg.on('framenavigated', fr => { try { if (fr !== pg.mainFrame()) return; gcbSig.pageAt = Date.now(); gcbSig.probe = null; gcbSig.failStreak = 0; gcbSig.names = null; gcbSet('checking'); } catch (e) {} });
+        const gcbSet = (state, reason, detail) => {
+          const changed = gcbSig.state !== state || gcbSig.reason !== (reason || null);
+          gcbSig.state = state; gcbSig.reason = reason || null; gcbSig.detail = detail ? String(detail).slice(0, 200) : null;
+          gcbSig.message = state === 'ok' ? '签名正常' : state === 'checking' ? '签名自检中' : (GCB_SIGN_MSG[reason] || '签名不可用');
+          if (changed) { gcbSig.since = Date.now(); log[state === 'failed' ? 'warn' : 'info']('[GCBridge] signer ' + state + (reason ? ' ' + reason : '') + ' frontend=' + (gcbSig.frontend || '-') + (gcbSig.detail ? ' ' + gcbSig.detail : '')); }
+        };
+        const gcbProbe = () => {
+          if (gcbProbing || pg.isClosed()) return; gcbProbing = true; gcbSig.probedAt = Date.now();
+          pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_PROBE).then(raw => {
+            let o; try { o = JSON.parse(raw); } catch (e) { o = { r: 'bad ' + String(raw).slice(0, 60) }; }
+            gcbSig.names = { hash: o.hash || null, sign: o.sign || null, service: o.via || null };
+            if (o.r === 'missing') { gcbSig.probe = null; return; }
+            gcbSig.probe = o.r === 'ok' ? 'ok' : 'failed';
+            if (gcbSig.probe === 'ok') { if (gcbSig.failStreak < 3) gcbSet('ok'); } else if (Date.now() - gcbSig.pageAt < 60000) { if (gcbSig.state !== 'checking') gcbSet('checking'); } else gcbSet('failed', 'sign_probe_failed', o.r);
+          }).catch(e => { gcbSig.probe = null; log.warn('[GCBridge] signer probe error ' + String(e && e.message || e).slice(0, 120)); }).finally(() => { gcbProbing = false; });
+        };
+        const gcbAssess = v => {
+          const now = Date.now();
+          if (gcbSig.state === 'failed' && gcbSig.reason === 'frontend_incompatible') {
+            if (now - gcbSig.since < 300000) return;
+            gcbSig.failStreak = 2; // half-open after 5 min: real traffic may try again, one more signing error re-trips
+          }
+          const reason = v === 'ok' ? null : (GCB_INSTALL_REASON[v] || 'install_error');
+          if (reason) { if (now - gcbSig.pageAt < 60000) { if (gcbSig.state !== 'checking') gcbSet('checking'); } else gcbSet('failed', reason, reason === 'install_error' ? v : null); return; }
+          if (gcbSig.probe === 'ok') { if (gcbSig.state !== 'ok') gcbSet('ok'); return; }
+          if (gcbSig.probe === 'failed' && now - gcbSig.probedAt < 30000) return;
+          gcbProbe();
+        };
+        const gcbOutcome = (ok, text) => {
+          if (ok) { gcbSig.okRequests++; gcbSig.failStreak = 0; gcbSig.lastOkAt = Date.now(); if (gcbSig.state === 'failed' && gcbSig.reason === 'frontend_incompatible') gcbSet('ok'); return; }
+          const t = String(text || ''); if (!GCB_SIGN_ERR.test(t)) return;
+          gcbSig.failStreak++;
+          if (gcbSig.failStreak >= 3 && !(gcbSig.state === 'failed' && gcbSig.reason === 'frontend_incompatible')) gcbSet('failed', 'frontend_incompatible', t);
+        };
         const gcbTimer = setInterval(() => { if (pg.isClosed()) return clearInterval(gcbTimer); gcbInstall(); }, 3000);
         const CAT = { HARM_CATEGORY_HARASSMENT: 7, HARM_CATEGORY_HATE_SPEECH: 8, HARM_CATEGORY_SEXUALLY_EXPLICIT: 9, HARM_CATEGORY_DANGEROUS_CONTENT: 10, HARM_CATEGORY_CIVIC_INTEGRITY: 11 };
         const THR = { BLOCK_LOW_AND_ABOVE: 1, BLOCK_MEDIUM_AND_ABOVE: 2, BLOCK_ONLY_HIGH: 3, BLOCK_NONE: 4, OFF: 5 };
@@ -553,7 +598,7 @@ return window.__tb?'ok':'wait';})()`;
             let gcbBk; const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise(rs => { gcbBk = setTimeout(() => rs(JSON.stringify({ s: 504, t: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_NO_RESPONSE', message: '浏览器页面超过 ' + Math.round((GCB_HARD_MS + 30000) / 60000) + ' 分钟没有返回，已主动中止，请重试。' } }) })), GCB_HARD_MS + 30000); })]).finally(() => clearTimeout(gcbBk)); // backstop only: Google cuts at ~600s
             if (gcbRid) gcbOps.delete(gcbRid); const r = JSON.parse(raw);
             if (r.s === 499) { log.info('[GCBridge] ' + mm[1] + ' upstream call ' + gcbOp + ' cancelled after ' + (Date.now() - gcbT0) + 'ms'); return route.abort().catch(() => {}); }
-            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
+            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' ' + String(r.t).slice(0, 300)); gcbOutcome(false, r.t); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
             const arr0 = JSON.parse(r.t); const isChunk = x => Array.isArray(x) && Array.isArray(x[0]) && Array.isArray(x[0][0]) && Array.isArray(x[0][0][0]) && x[0][0][0][1] === 'model'; const arr = Array.isArray(arr0) && arr0.some(isChunk) ? arr0 : (Array.isArray(arr0) && Array.isArray(arr0[0]) ? arr0[0] : []);
             const chunks = arr.map(convChunk).filter(c => c && c.candidates && c.candidates.length);
             let out;
@@ -561,10 +606,10 @@ return window.__tb?'ok':'wait';})()`;
             else out = JSON.stringify([JSON.stringify(merge(chunks))]);
             { const lf = (chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'; if (lf !== 'STOP') { try { const sh = v => v == null ? null : typeof v === 'string' ? 's' + v.length : Array.isArray(v) ? 'a' + JSON.stringify(v).length : typeof v; const raw = arr.filter(isChunk).map(m => (m[0] || []).map(c => [(Array.isArray(c && c[0] && c[0][0]) ? c[0][0] : []).map(p2 => Array.isArray(p2) ? p2.map((v, i) => v == null ? null : i + ':' + sh(v)).filter(Boolean).join('|') : sh(p2)).join(' ; '), 'cand=' + (Array.isArray(c) ? c.map((v, i) => v == null ? null : i + ':' + sh(v)).filter(Boolean).join('|') : sh(c))].join(' / ')).join(' || ')); log.warn('[GCBridge] shape ' + mm[1] + ' finish=' + lf + ' top=' + arr0.length + ' chunks=' + raw.length + ' :: ' + raw.slice(-3).join(' ## ').slice(0, 1500)); } catch (e) { log.warn('[GCBridge] shape failed ' + e.message); } } }
             { const lc = chunks[chunks.length - 1]; if (chunks.length && !(lc.candidates[0] && lc.candidates[0].finishReason)) { let chars = 0; for (const c of chunks) for (const p of ((c.candidates[0] && c.candidates[0].content && c.candidates[0].content.parts) || [])) { if (typeof p.text === 'string' && !p.thought) chars += p.text.length; const fa = p.functionCall && p.functionCall.args; if (fa && typeof fa.answer === 'string') chars += fa.answer.length; } const sec = Math.round((Date.now() - gcbT0) / 1000); log.warn('[GCBridge] ' + mm[1] + ' upstream cut: no finishReason after ' + sec + 's chunks=' + chunks.length + ' bytes=' + String(r.t || '').length + ' chars=' + chars); return route.fulfill({ status: 504, contentType: 'application/json; charset=UTF-8', body: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_CUT', message: 'Google 在约 ' + Math.max(1, Math.round(sec / 60)) + ' 分钟时断开连接，回答未写完（已生成约 ' + chars + ' 字被丢弃）。请重试，或让回答短一些。' } }) }); } }
-            log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' bytes=' + String(r.t || '').length + ' finish=' + ((chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'));
+            gcbOutcome(true); log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' bytes=' + String(r.t || '').length + ' finish=' + ((chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'));
             return route.fulfill({ status: 200, contentType: 'application/json+protobuf; charset=UTF-8', body: out });
           } catch (e) {
-            log.warn('[GCBridge] error ' + e.message);
+            log.warn('[GCBridge] error ' + e.message); gcbOutcome(false, e.message);
             return route.fulfill({ status: 500, contentType: 'application/json+protobuf; charset=UTF-8', body: JSON.stringify([13, 'GCBridge: ' + e.message]) });
           }
         });
@@ -572,6 +617,7 @@ return window.__tb?'ok':'wait';})()`;
       if (process.env.WORKER_ACCOUNT || process.env.CLIENT_SCRIPT_OBSERVE === '1') {
         const stopObservation = require('./observe-client-scripts').observe(this.page, record => {
           this.logger.info('[ClientScriptObservation] ' + JSON.stringify(record));
+          if (record && record.host === 'www.gstatic.com' && typeof record.sha256 === 'string') { this.gcbFrontend = record.sha256.slice(0, 12); if (this.gcbSigner) this.gcbSigner.frontend = this.gcbFrontend; }
         });
         this.page.once('close', () => { stopObservation().catch(() => {}); });
       }
@@ -2319,6 +2365,7 @@ class RequestHandler {
     let current = googleResponse;
     let lastAnswer = null;
     const atUsage = {complete: true, sum: {}};
+    let atRetries = 0;
     const atAddUsage = (resp) => { const u = resp && resp.usageMetadata; if (!u || typeof u !== 'object') { atUsage.complete = false; return; } for (const key of ['promptTokenCount','candidatesTokenCount','thoughtsTokenCount','cachedContentTokenCount','totalTokenCount']) { if (Number.isSafeInteger(u[key]) && u[key] >= 0) atUsage.sum[key] = (atUsage.sum[key] || 0) + u[key]; } };
     atAddUsage(current);
     // Diagnostics only: shape and size of each round, never the content itself.
@@ -2354,15 +2401,27 @@ class RequestHandler {
         this.logger.info("[AT] emit_answer found on attempt " + attempt + ", len=" + r.answer.length);
         return r;
       }
+      const atElapsed = Date.now() - startedAt;
+      const atPartial = (() => { const c0 = current && current.candidates && current.candidates[0]; let t = ''; for (const p of ((c0 && c0.content && c0.content.parts) || [])) if (p && typeof p.text === 'string' && !p.thought) t += p.text; const a = typeof r.answer === 'string' ? r.answer : ''; return a.length >= t.length ? a : t; })();
       if (attempt > AT.AT_MAX_ATTEMPTS) break;
-      if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) { this.logger.warn('[AT] giving up: finish=' + r.finishReason + ' on round ' + attempt); const atBlock = AT.atBlockInfo(current); if (atBlock) { if (attempt > 1) atBlock.promptTokens = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount) ? atUsage.sum.promptTokenCount : null; this.logger.warn('[AT] content blocked by upstream: reason=' + atBlock.reason + ' stage=' + atBlock.stage + ' round=' + attempt + ' promptTokens=' + (atBlock.promptTokens ?? '-')); throw Object.assign(Error('AT_content_blocked'), {status: 502, atBlock}); } { const c0 = current && current.candidates && current.candidates[0]; let chars = 0; for (const p of ((c0 && c0.content && c0.content.parts) || [])) if (p && typeof p.text === 'string' && !p.thought) chars += p.text.length; const ok = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount); const atFinish = { reason: String(r.finishReason).slice(0, 40).replace(/[^A-Z0-9_]/gi, '_'), round: attempt, chars, promptTokens: ok ? atUsage.sum.promptTokenCount : null, outputTokens: ok && Number.isSafeInteger(atUsage.sum.candidatesTokenCount) ? atUsage.sum.candidatesTokenCount : null }; this.logger.warn('[AT] upstream ended early: finish=' + atFinish.reason + ' round=' + attempt + ' chars=' + chars + ' tok(in/out)=' + (atFinish.promptTokens ?? '-') + '/' + (atFinish.outputTokens ?? '-') + ' ms=' + (roundStartedAt ? Date.now() - roundStartedAt : '-') + '; not continued, nothing returned'); throw Object.assign(Error('AT_upstream_finish_' + atFinish.reason), {status: 502, atFinish}); } }
-      { const elapsed = Date.now() - startedAt; if (elapsed >= AT.AT_CONTINUE_DEADLINE_MS) { const c0 = current && current.candidates && current.candidates[0]; let chars = 0; for (const p of ((c0 && c0.content && c0.content.parts) || [])) if (p && typeof p.text === 'string' && !p.thought) chars += p.text.length; const ok = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount); const atFinish = { reason: String(r.finishReason || 'NO_ANSWER').slice(0, 40).replace(/[^A-Z0-9_]/gi, '_'), round: attempt, chars, elapsedMs: elapsed, timeLimit: true, promptTokens: ok ? atUsage.sum.promptTokenCount : null, outputTokens: ok && Number.isSafeInteger(atUsage.sum.candidatesTokenCount) ? atUsage.sum.candidatesTokenCount : null }; this.logger.warn('[AT] not continuing: elapsed=' + elapsed + 'ms >= ' + AT.AT_CONTINUE_DEADLINE_MS + 'ms, finish=' + atFinish.reason + ' round=' + attempt + ' chars=' + chars + ' tok(in/out)=' + (atFinish.promptTokens ?? '-') + '/' + (atFinish.outputTokens ?? '-')); throw Object.assign(Error('AT_continue_deadline'), {status: 502, atFinish}); } }
-      this.logger.info('[AT] continuing because ' + (r.found ? 'emit_answer finish=' + r.finishReason : 'no emit_answer (finish=' + (r.finishReason || '-') + ')'));
-      lastAnswer = r.answer || lastAnswer;
+      let atRetryNow = false;
+      if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) {
+        this.logger.warn('[AT] giving up: finish=' + r.finishReason + ' on round ' + attempt);
+        const atBlock = AT.atBlockInfo(current);
+        if (atBlock) { if (attempt > 1) atBlock.promptTokens = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount) ? atUsage.sum.promptTokenCount : null; this.logger.warn('[AT] content blocked by upstream: reason=' + atBlock.reason + ' stage=' + atBlock.stage + ' round=' + attempt + ' promptTokens=' + (atBlock.promptTokens ?? '-')); throw Object.assign(Error('AT_content_blocked'), {status: 502, atBlock}); }
+        
+        // Ended early (not STOP/MAX_TOKENS) within 6 minutes: send the original request again, up to AT_MAX_RETRIES times.
+        if (atElapsed < AT.AT_CONTINUE_DEADLINE_MS && atRetries < AT.AT_MAX_RETRIES) { atRetries++; atRetryNow = true; this.logger.warn('[AT] upstream ended early: finish=' + r.finishReason + ' chars=' + atPartial.length + ' elapsed=' + atElapsed + 'ms; retrying original request ' + atRetries + '/' + AT.AT_MAX_RETRIES); }
+        else { const c0 = current && current.candidates && current.candidates[0]; let chars = 0; for (const p of ((c0 && c0.content && c0.content.parts) || [])) if (p && typeof p.text === 'string' && !p.thought) chars += p.text.length; const ok = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount); const atFinish = { reason: String(r.finishReason).slice(0, 40).replace(/[^A-Z0-9_]/gi, '_'), round: attempt, chars, promptTokens: ok ? atUsage.sum.promptTokenCount : null, outputTokens: ok && Number.isSafeInteger(atUsage.sum.candidatesTokenCount) ? atUsage.sum.candidatesTokenCount : null }; this.logger.warn('[AT] upstream ended early: finish=' + atFinish.reason + ' round=' + attempt + ' chars=' + chars + ' tok(in/out)=' + (atFinish.promptTokens ?? '-') + '/' + (atFinish.outputTokens ?? '-') + ' elapsed=' + atElapsed + 'ms retries=' + atRetries + '; nothing returned'); throw Object.assign(Error('AT_upstream_finish_' + atFinish.reason), {status: 502, atFinish}); }
+      }
+      if (!atRetryNow && atElapsed >= AT.AT_CONTINUE_DEADLINE_MS) { const c0 = current && current.candidates && current.candidates[0]; let chars = 0; for (const p of ((c0 && c0.content && c0.content.parts) || [])) if (p && typeof p.text === 'string' && !p.thought) chars += p.text.length; const ok = atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount); const atFinish = { reason: String(r.finishReason || 'NO_ANSWER').slice(0, 40).replace(/[^A-Z0-9_]/gi, '_'), round: attempt, chars, elapsedMs: atElapsed, timeLimit: true, promptTokens: ok ? atUsage.sum.promptTokenCount : null, outputTokens: ok && Number.isSafeInteger(atUsage.sum.candidatesTokenCount) ? atUsage.sum.candidatesTokenCount : null }; this.logger.warn('[AT] not continuing: elapsed=' + atElapsed + 'ms >= ' + AT.AT_CONTINUE_DEADLINE_MS + 'ms, finish=' + atFinish.reason + ' round=' + attempt + ' chars=' + chars + ' tok(in/out)=' + (atFinish.promptTokens ?? '-') + '/' + (atFinish.outputTokens ?? '-')); throw Object.assign(Error('AT_continue_deadline'), {status: 502, atFinish}); }
+      if (!atRetryNow) this.logger.info('[AT] continuing because ' + (r.found ? 'emit_answer finish=' + r.finishReason : 'no emit_answer (finish=' + (r.finishReason || '-') + ')'));
+      lastAnswer = atRetryNow ? null : (r.answer || lastAnswer);
       if (typeof this._atWaitOperationDone !== /function/.source) throw Error(/AT_cleanup_hook_missing/.source);
       if (!await this._atWaitOperationDone(previousOperationId)) throw Error(/AT_previous_operation_not_settled/.source);
       if (res.destroyed || res.writableEnded) throw Error(/AT_client_disconnected/.source);
-      const contBody = AT.atBuildContinuationBody(googleBody, current, lastAnswer);
+      const contBody = atRetryNow ? googleBody : AT.atBuildContinuationBody(googleBody, current, lastAnswer);
+      if (atRetryNow) attempt = 0;
       const contId = this._generateRequestId();
       const contQueue = this.connectionRegistry.createMessageQueue(contId);
       const contOnClose = () => { if (!res.writableEnded) { this.logger.warn('[AT] client gone during continuation #' + contId + '; cancelling upstream'); this._cancelBrowserRequest(contId); } };

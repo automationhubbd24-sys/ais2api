@@ -14,7 +14,8 @@ function install({system,tracker,requestScope,account}) {
   });
   system.workerStatus=()=>{
     const s=workerStatus();
-    return {...s,ready:s.ready && !running,busy:s.busy || Boolean(running),catalogSyncing:Boolean(running)};
+    return {...s,ready:s.ready && !running,busy:s.busy || Boolean(running),catalogSyncing:Boolean(running),
+      unready:s.ready&&running?{reason:'catalog_syncing',message:'模型同步中',since:attemptedAt||null}:s.unready};
   };
   const refresh=(requestedJob,expectedAccount)=>{
     if(expectedAccount!==account || typeof requestedJob!=='string' ||
