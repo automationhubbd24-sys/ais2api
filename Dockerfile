@@ -1,4 +1,3 @@
-
 FROM node:18-bookworm-slim
 
 ENV NODE_ENV=production \
@@ -22,12 +21,20 @@ COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund \
     && npm cache clean --force
 
-# Pass CAMOUFOX_URL as a Docker build argument.
-ARG CAMOUFOX_URL
+# By default, resolve the browser bundle from the latest project release.
+# Override CAMOUFOX_URL only when a different bundle is required.
+ARG CAMOUFOX_RELEASE_REPOSITORY=ellinalopez/cloud-studio
+ARG CAMOUFOX_URL=
 
 RUN set -eux; \
+    if [ -z "${CAMOUFOX_URL}" ]; then \
+      CAMOUFOX_URL="$(curl --fail --location --retry 3 \
+        "https://api.github.com/repos/${CAMOUFOX_RELEASE_REPOSITORY}/releases/latest" \
+        | sed -n 's/.*"browser_download_url": *"\([^"]*camoufox-linux\.tar\.gz\)".*/\1/p' \
+        | head -n 1)"; \
+    fi; \
     test -n "${CAMOUFOX_URL}" || \
-      (echo "CAMOUFOX_URL build argument is required" >&2; exit 1); \
+      (echo "No camoufox-linux.tar.gz asset found. Set CAMOUFOX_URL as a build variable." >&2; exit 1); \
     curl --fail --location --retry 3 \
       "${CAMOUFOX_URL}" -o /tmp/camoufox-linux.tar.gz; \
     tar -xzf /tmp/camoufox-linux.tar.gz -C /app; \
