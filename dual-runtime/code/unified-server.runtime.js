@@ -1659,6 +1659,53 @@ class RequestHandler {
     if (this.browserManager) {
       this.browserManager.notifyUserActivity();
     }
+
+    if (!this.connectionRegistry.hasActiveConnections()) {
+      if (this.isSystemBusy) {
+        this.logger.warn(
+          "[System] 检测到连接断开，但系统正在进行切换/恢复，拒绝新请求。",
+        );
+        return this._sendErrorResponse(
+          res,
+          503,
+          "服务器正在进行内部维护（账号切换/恢复），请稍后重试。",
+        );
+      }
+
+      this.logger.error(
+        "❌ [System] 检测到浏览器WebSocket连接已断开！可能是进程崩溃。正在尝试恢复...",
+      );
+      this.isSystemBusy = true;
+      try {
+        await this.browserManager.launchOrSwitchContext(this.currentAuthIndex);
+        this.logger.info(`[System] 浏览器页面已加载，等待 WebSocket 握手...`);
+        let wsReady = false;
+        for (let i = 0; i < 20; i++) {
+          if (this.connectionRegistry.hasActiveConnections()) {
+            wsReady = true;
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 500));
+        }
+
+        if (!wsReady) {
+          throw new Error(
+            "浏览器已启动，但前端 WebSocket 始终未能连接到代理端。",
+          );
+        }
+        this.logger.info(`✅ [System] 浏览器与 WebSocket 已完全恢复就绪！`);
+      } catch (error) {
+        this.logger.error(`❌ [System] 浏览器自动恢复失败: ${error.message}`);
+        return this._sendErrorResponse(
+          res,
+          503,
+          "服务暂时不可用：后端浏览器实例崩溃且无法自动恢复，请联系管理员。",
+        );
+      } finally {
+        this.isSystemBusy = false;
+      }
+    }
+
     const requestId = this._generateRequestId();
     const atRequestStartedAt = Date.now();
     const isOpenAIStream = req.body.stream === true;
