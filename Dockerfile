@@ -45,7 +45,7 @@ COPY dual-runtime/code/import-ui.js ./import-ui.js
 COPY dual-runtime/code/import-ui.html ./import-ui.html
 COPY dual-runtime/code/models.json ./models.json
 
-COPY dual-runtime/refactor/black-browser.js ./black-browser.js
+COPY dual-runtime/code/black-browser.js ./black-browser.js
 COPY dual-runtime/refactor/verified-client-route.js ./verified-client-route.js
 
 RUN mkdir -p /app/auth \
