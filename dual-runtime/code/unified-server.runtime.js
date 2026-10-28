@@ -415,6 +415,7 @@ class BrowserManager {
     try {
       this.context = await this.browser.newContext({
         storageState: storageStateObject,
+        viewport: null,
       });
       if (process.env.WORKER_ACCOUNT) {
         await require('./verified-client-route').install(
