@@ -1,4 +1,4 @@
-FROM node:18-bookworm-slim
+FROM node:24.22.1-slim
 
 ENV NODE_ENV=production \
     PORT=7860 \
