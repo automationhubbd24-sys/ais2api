@@ -188,7 +188,30 @@ class RequestProcessor {
     // Keep operation records until their fetch/stream actually settles.
   }
 
+  _getGCBridgeOperation(requestSpec) {
+    let operation = requestSpec.path.startsWith("/")
+      ? requestSpec.path.substring(1)
+      : requestSpec.path;
+    if (requestSpec.streaming_mode === "fake") {
+      operation = operation.replace(":streamGenerateContent", ":generateContent");
+    }
+    const match = operation.match(
+      /^v1beta\/(models\/[^/?/:]+:(?:generateContent|streamGenerateContent))$/
+    );
+    return requestSpec.method === "POST" ? match?.[1] || null : null;
+  }
+
   _constructUrl(requestSpec) {
+    const gcBridgeOperation = this._getGCBridgeOperation(requestSpec);
+    if (gcBridgeOperation) {
+      const rpcMethod = requestSpec.streaming_mode === "real"
+        ? "ProxyStreamedCall"
+        : "ProxyUnaryCall";
+      return "https://alkalimakersuite-pa.clients6.google.com/$rpc/" +
+        "google.internal.alkali.applications.makersuite.v1.MakerSuiteService/" +
+        rpcMethod;
+    }
+
     let pathSegment = requestSpec.path.startsWith("/")
       ? requestSpec.path.substring(1)
       : requestSpec.path;
@@ -222,6 +245,7 @@ class RequestProcessor {
   }
 
   _buildRequestConfig(requestSpec, signal) {
+    const gcBridgeOperation = this._getGCBridgeOperation(requestSpec);
     const config = {
       method: requestSpec.method,
       headers: this._sanitizeHeaders(requestSpec.headers),
@@ -234,7 +258,7 @@ class RequestProcessor {
     ) {
       try {
         let bodyObj = JSON.parse(requestSpec.body);
-        delete bodyObj.__aisRid;
+        if (!gcBridgeOperation) delete bodyObj.__aisRid;
 
         // --- 模块1：智能过滤 (保留) ---
         const isImageModel =
@@ -251,11 +275,24 @@ class RequestProcessor {
           }
         }
 
-        config.body = JSON.stringify(bodyObj);
+        config.body = gcBridgeOperation
+          ? JSON.stringify([gcBridgeOperation, JSON.stringify(bodyObj)])
+          : JSON.stringify(bodyObj);
       } catch (e) {
         Logger.output("处理请求体时发生错误:", e.message);
         config.body = requestSpec.body;
       }
+    }
+
+    if (gcBridgeOperation) {
+      Object.keys(config.headers).forEach((header) => {
+        if (["content-type", "x-user-agent", "x-goog-api-key"].includes(header.toLowerCase())) {
+          delete config.headers[header];
+        }
+      });
+      config.headers["content-type"] = "application/json+protobuf";
+      config.headers["x-user-agent"] = "grpc-web-javascript/0.1";
+      config.credentials = "include";
     }
 
     return config;
