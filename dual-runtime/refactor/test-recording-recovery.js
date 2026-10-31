@@ -81,6 +81,7 @@ test('Google cut-off (no finishReason) fails fast as 504 and is never retried or
   const fs = require('fs'); const path = require('path');
   const src = fs.readFileSync(path.join(__dirname, '../code/unified-server.runtime.js'), 'utf8');
   assert.ok(src.includes("window.__gcCall.v!==8") && src.includes("window.__gcCall.v=8;"));
+  assert.ok(src.includes("gcbHx.visit = h['x-aistudio-visit-id']") && src.includes("if(hx.visit)hd['x-aistudio-visit-id']=hx.visit;"));
   assert.ok(src.includes('signal:ac.signal') && src.includes("hx.hardMs||660000"));
   assert.ok(src.includes("status: 'UPSTREAM_CUT'") && src.includes('upstream cut: no finishReason'));
   assert.ok(src.includes('GCB_HARD_MS + 30000'));
@@ -112,9 +113,9 @@ test('client cancel aborts the in-page Google call (also continuation rounds); l
   const o = JSON.parse(await h.run); assert.equal(o.s, 499); assert.equal(o.t, 'cancelled');
   assert.equal(h.abort('g9'), false, 'handle is removed once the call settles');
   // node side: request id is threaded through, legacy models are not tagged, cancel maps rid -> op
-  assert.ok(src.includes("if (!gcbLegacy && typeof proxyRequest.request_id === 'string') body.__aisRid = proxyRequest.request_id;"));
+  assert.ok(src.includes("if (typeof proxyRequest.request_id === 'string') body.__aisRid = proxyRequest.request_id;"));
   assert.ok(src.includes("delete g.__aisRid;") && src.includes('gcbOps.set(gcbRid, gcbOp)') && src.includes('if (gcbRid) gcbOps.delete(gcbRid);'));
-  assert.ok(src.includes("window.__gcAbort(o)") && src.includes('r.s === 499'));
+  assert.ok(src.includes("window.wrappedJSObject.__gcAbort(o)") && src.includes('r.s === 499'));
   assert.ok(/_cancelBrowserRequest\(requestId\) \{\n\s+try \{ const bm = this\.browserManager/.test(src));
   // continuation rounds cancel their own id when the client leaves, and drop the listener afterwards
   assert.ok(src.includes('res.on("close", contOnClose);') && src.includes('res.removeListener("close", contOnClose);') && src.includes('this._cancelBrowserRequest(contId)'));

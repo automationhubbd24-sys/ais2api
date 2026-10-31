@@ -5,19 +5,15 @@ const SESSION_NAMES=["SID","__Secure-1PSID","__Secure-3PSID"];
 const httpError=(status,error,extra)=>Object.assign(Error(error),{status,body:{error,...(extra||{})}});
 // Validate a Playwright storage-state payload. Never echoes cookie values.
 function validate(d){
-   const str=x=>typeof x==="string";
-   if(Array.isArray(d)) d={cookies:d,origins:[]};
-   if(!d || !Array.isArray(d.cookies) || !d.cookies.length || d.cookies.length>500 || !Array.isArray(d.origins) || d.origins.length>20) throw Error("顶层结构无效：需要 cookies 与 origins 数组");
-  const googleCookies=d.cookies.filter(c=>c&&str(c.domain)&&/^\.?([a-z0-9-]+\.)*google\.com$/i.test(c.domain));
-  if(!googleCookies.length || googleCookies.length>200) throw Error("没有找到有效的 google.com Cookie");
-  const cookies=googleCookies.map((c,i)=>{
-    const expires=c.session===true?-1:(c.expires??c.expirationDate??-1);
-    const sameSite={lax:"Lax",strict:"Strict",none:"None",no_restriction:"None",unspecified:"Lax"}[String(c.sameSite??"unspecified").toLowerCase()];
-    if(!str(c.name) || !c.name || c.name.length>256 || !str(c.value) || c.value.length>16384 ||
+  const str=x=>typeof x==="string";
+  if(!d || !Array.isArray(d.cookies) || !d.cookies.length || d.cookies.length>200 || !Array.isArray(d.origins) || d.origins.length>20) throw Error("顶层结构无效：需要 cookies(1-200) 与 origins(1-20) 数组");
+  const cookies=d.cookies.map((c,i)=>{
+    if(!c || !str(c.name) || !c.name || c.name.length>256 || !str(c.value) || c.value.length>16384 ||
+       !str(c.domain) || !/^\.?([a-z0-9-]+\.)*google\.com$/i.test(c.domain) ||
        !str(c.path) || !c.path.startsWith("/") || c.path.length>2048 ||
-       !Number.isFinite(expires) || expires<-1 || typeof c.httpOnly!=="boolean" ||
-       typeof c.secure!=="boolean" || !sameSite) throw Error("Google Cookie #"+(i+1)+" 字段无效");
-    return {name:c.name,value:c.value,domain:c.domain,path:c.path,expires,httpOnly:c.httpOnly,secure:c.secure,sameSite};
+       !Number.isFinite(c.expires) || c.expires<-1 || typeof c.httpOnly!=="boolean" ||
+       typeof c.secure!=="boolean" || !["Lax","Strict","None"].includes(c.sameSite)) throw Error("Cookie #"+(i+1)+" 字段无效(需name/value/domain=google.com子域/path/expires秒/httpOnly/secure/sameSite)");
+    return {name:c.name,value:c.value,domain:c.domain,path:c.path,expires:c.expires,httpOnly:c.httpOnly,secure:c.secure,sameSite:c.sameSite};
   });
   const origins=d.origins.map(o=>{
     if(!o || !["https://aistudio.google.com","https://ai.studio","https://accounts.google.com"].includes(o.origin) || !Array.isArray(o.localStorage) || o.localStorage.length>200) throw Error("origins.origin 只允许 aistudio.google.com / ai.studio / accounts.google.com");
@@ -29,7 +25,7 @@ function validate(d){
   return {cookies,origins};
 }
 const sess=list=>{const m=new Map();for(const c of list)if(SESSION_NAMES.includes(c.name)&&c.value)m.set(c.name,c.value);return m;};
-const listIds=()=>{fs.mkdirSync(AUTH_DIR,{recursive:true,mode:0o700});return fs.readdirSync(AUTH_DIR).filter(n=>/^auth-\d+\.json$/.test(n)).map(n=>Number(n.match(/\d+/)[0]));};
+const listIds=()=>fs.readdirSync(AUTH_DIR).filter(n=>/^auth-\d+\.json$/.test(n)).map(n=>Number(n.match(/\d+/)[0]));
 function findSame(cookies,nums){
   const mine=sess(cookies);if(!mine.size)return null;
   for(const n of nums){
@@ -71,7 +67,6 @@ function saveImport(system,body,{tier,alias,update=false,mode}={}){
   system.authSource.initialIndices.push(index);
   system.authSource.availableIndices.push(index);
   system.authSource.accountNameMap.set(index,alias||"导入账号 "+index);
-  if(system.browserManager)system.browserManager.currentAuthIndex=index;
   system.logger.info("[Import] 新增账号 #"+index+"，尚未验证");
   return {index,updated:false,tier,alias,verified:false};
 }

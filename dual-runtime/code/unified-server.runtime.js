@@ -11,17 +11,54 @@ const { firefox } = require("playwright");
 const os = require("os");
 const AT = (function () {
 const AT_PREFIX = "anti-truncation/";
-const AT_TOOL_NAME = "emit_answer";
+const AT_TOOL_NAME = "seal_final_reply";
+// Names still accepted from the model (old name kept for history and stray calls).
+const AT_TOOL_NAMES = ["seal_final_reply", "final_answer", "emit_answer"];
 const AT_MAX_ATTEMPTS = 3;
 // After this much time since the request arrived, an unfinished round fails instead of continuing.
 const AT_CONTINUE_DEADLINE_MS = 360000;
 const AT_MAX_RETRIES = 3;
+// STOP with this much plain answer text but no emit_answer call: accept the text as the answer.
+const AT_STOP_TEXT_MIN_CHARS = 2000;
+// Empty upstream response (no candidate parts): wait this long, then resend the original request.
+const AT_EMPTY_RETRY_DELAY_MS = 3000;
 const AT_SYSTEM_HINT =
-  "\n\n[SYSTEM CONSTRAINT] You have a tool named emit_answer. " +
+  "\n\n[SYSTEM CONSTRAINT] You have a tool named " + AT_TOOL_NAME + ". " +
   "When you are ready to output your final complete answer, you MUST call " +
-  "emit_answer with the full answer text as the value of the key \"answer\". " +
+  "" + AT_TOOL_NAME + " with the full answer text as the value of the key \"answer\". " +
   "Do not output the answer as plain text. Do not stop early. " +
-  "If the answer is long, call emit_answer once with the complete content.";
+  "If the answer is long, call " + AT_TOOL_NAME + " once with the complete content.";
+// Selectable prompt presets (settings page: anti-truncation prompt). Unknown or missing key -> classic.
+// Keep the key list in sync with refactor/at-prompt-store.js.
+const AT_PROMPTS = {
+  classic: { desc: "Emit your final complete answer.", hint: AT_SYSTEM_HINT },
+  once: {
+    desc: "Deliver the complete final answer. Call exactly once. The answer must not also appear as normal text.",
+    hint:
+      "\n\n[SYSTEM CONSTRAINT] Deliver your final answer exactly once, through the " + AT_TOOL_NAME + " tool.\n" +
+      "- Make a real function call to " + AT_TOOL_NAME + " and put the entire final answer in the key \"answer\".\n" +
+      "- Do not write any part of the answer as normal text before or after the call: no preview, no draft, no summary, no second copy.\n" +
+      "- Never type the call yourself as text, JSON, code or a list such as [{\"name\": \"" + AT_TOOL_NAME + "\", ...}].\n" +
+      "- If the answer is long, still call " + AT_TOOL_NAME + " once with the complete content. Do not stop early.\n" +
+      "- If a real function call is impossible, write the answer once as plain text and stop. Never repeat it.",
+  },
+  tool_only: {
+    desc: "The only channel for the final answer. Your reply must consist of this single call and nothing else.",
+    hint:
+      "\n\n[SYSTEM CONSTRAINT] Your reply must consist of exactly one function call to " + AT_TOOL_NAME + " and nothing else.\n" +
+      "- Zero text outside the call: no greeting, no answer text, no notes, no closing remarks.\n" +
+      "- The key \"answer\" holds the complete final answer with all its formatting.\n" +
+      "- The call is a real tool call. Writing it as text, JSON or code is forbidden.\n" +
+      "- Call it once. Never split the answer across several calls and never repeat it. Do not stop early.",
+  },
+  lite: {
+    desc: "Final answer (call once).",
+    hint: "\n\n[SYSTEM CONSTRAINT] Put your complete final answer in one real " + AT_TOOL_NAME + " call (key \"answer\"). No answer text outside the call, no second copy, do not stop early.",
+  },
+};
+function atPromptKey(key) {
+  return typeof key === "string" && Object.prototype.hasOwnProperty.call(AT_PROMPTS, key) ? key : "classic";
+}
 
 // Google rejects a conversation whose last turn is the model. Turn trailing
 // plain-text model turns into user turns; tool-call turns are left untouched.
@@ -45,15 +82,16 @@ function atIsEnabled(modelName) {
 function atRealModel(modelName) {
   return atIsEnabled(modelName) ? modelName.slice(AT_PREFIX.length) : modelName;
 }
-function atInjectTools(googleBody) {
+function atInjectTools(googleBody, promptKey) {
+  const preset = AT_PROMPTS[atPromptKey(promptKey)];
   if (!googleBody || !Array.isArray(googleBody.contents)) return googleBody;
   const alreadyInjected = (googleBody.tools || []).some((t) =>
-    (t.functionDeclarations || []).some((d) => d.name === AT_TOOL_NAME),
+    (t.functionDeclarations || []).some((d) => AT_TOOL_NAMES.includes(d.name)),
   );
   if (alreadyInjected) return googleBody;
   const decl = {
     name: AT_TOOL_NAME,
-    description: "Emit your final complete answer.",
+    description: preset.desc,
     parameters: {
       type: "OBJECT",
       properties: { answer: { type: "STRING" } },
@@ -68,7 +106,7 @@ function atInjectTools(googleBody) {
   }
   googleBody.systemInstruction = {
     role: "system",
-    parts: [{ text: sysText + AT_SYSTEM_HINT }],
+    parts: [{ text: sysText + preset.hint }],
   };
   return googleBody;
 }
@@ -82,7 +120,7 @@ function atExtractAnswer(googleResponse) {
       let finishReason = candidate.finishReason || null;
   for (const part of candidate.content.parts) {
     const fc = part.functionCall;
-    if (fc && fc.name === AT_TOOL_NAME && fc.args && typeof fc.args.answer === "string") {
+    if (fc && AT_TOOL_NAMES.includes(fc.name) && fc.args && typeof fc.args.answer === "string") {
       answer = fc.args.answer;
       finishReason = candidate.finishReason || null;
     }
@@ -100,9 +138,9 @@ function atBuildContinuationBody(googleBody, googleResponse, prevAnswer) {
     const calls = modelParts.filter(p=>p.functionCall); if (calls.length) newContents.push({role:/user/.source,parts:calls.map(p=>({functionResponse:{name:p.functionCall.name,...(p.functionCall.id?{id:p.functionCall.id}:{}),response:{status:/incomplete/.source}}}))});
   }
   const contText =
-    "Your previous emit_answer call was incomplete or missing. " +
+    "Your previous " + AT_TOOL_NAME + " call was incomplete or missing. " +
     (prevAnswer ? "Previous partial answer: " + prevAnswer + "\n\n" : "") +
-    "Call emit_answer again with the COMPLETE final answer (key \"answer\").";
+    "Call " + AT_TOOL_NAME + " again with the COMPLETE final answer (key \"answer\").";
   newContents.push({ role: "user", parts: [{ text: contText }] });
   const body = Object.assign({}, googleBody, { contents: newContents });
   if (body.generationConfig) {
@@ -146,7 +184,52 @@ function atBlockPayload(info, httpStatus) {
   if (info.promptTokens !== null) payload.usage = { prompt_tokens: info.promptTokens };
   return payload;
 }
-  return { AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, AT_CONTINUE_DEADLINE_MS, AT_MAX_RETRIES, fixTrailingModelTurn, atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody, atBlockInfo, atBlockMessage, atBlockPayload, atFinishPayload };
+
+// A model that skips the emit_answer tool sometimes writes the answer as text and then writes a
+// pseudo tool call as text too (emit_answer({"answer":"..."}) or a bare JSON object), which repeats
+// the whole answer as a JSON-escaped string (literal \n). Keep exactly one readable copy.
+function atDecodeJsonString(src, i) {
+  // src[i] is the opening quote. Returns { text, end } (end = index after closing quote, -1 if unterminated).
+  let out = '', j = i + 1;
+  while (j < src.length) {
+    const ch = src[j];
+    if (ch === '"') return { text: out, end: j + 1 };
+    if (ch === '\\' && j + 1 < src.length) {
+      const e = src[j + 1];
+      if (e === 'n') out += '\n'; else if (e === 't') out += '\t'; else if (e === 'r') out += '\r';
+      else if (e === 'b') out += '\b'; else if (e === 'f') out += '\f';
+      else if (e === 'u' && /^[0-9a-fA-F]{4}$/.test(src.slice(j + 2, j + 6))) { out += String.fromCharCode(parseInt(src.slice(j + 2, j + 6), 16)); j += 4; }
+      else out += e;
+      j += 2; continue;
+    }
+    out += ch; j++;
+  }
+  return { text: out, end: -1 };
+}
+function atCleanPlainAnswer(plain) {
+  const info = { plainLen: plain.length, literalNl: (plain.match(/\\n/g) || []).length, how: 'as-is' };
+  const re = /(?:◁[^▷\n]{0,24}▷\s*)?(?:`{3}[a-z]*\s*)?(?:\[\s*)?(?:\{\s*"name"\s*:\s*"(?:seal_final_reply|final_answer|emit_answer)"\s*,\s*"(?:arguments|args|parameters)"\s*:\s*)?(?:\b(?:(?:seal_final_reply|final_answer|emit_answer)|print\(default_api\.(?:seal_final_reply|final_answer|emit_answer)|default_api\.(?:seal_final_reply|final_answer|emit_answer))\s*\(?\s*)?\{\s*"answer"\s*:\s*"|\b(?:seal_final_reply|final_answer|emit_answer)\s*\(\s*answer\s*=\s*"/;
+  const m = re.exec(plain);
+  if (m) {
+    const q = m.index + m[0].length - 1;
+    const dec = atDecodeJsonString(plain, q);
+    const before = plain.slice(0, m.index).replace(/\s+$/, '');
+    info.marker = m.index; info.decodedLen = dec.text.length; info.terminated = dec.end > 0;
+    if (dec.end < 0 && before.trim().length > dec.text.trim().length) { info.how = 'cut-before-call'; return { answer: before, info }; }
+    if (dec.text.trim().length >= Math.max(200, before.trim().length * 0.5)) { info.how = 'decoded-call'; return { answer: dec.text, info }; }
+    if (before.trim().length) { info.how = 'cut-before-call'; return { answer: before, info }; }
+  }
+  // No call marker: an escaped copy with no real line breaks appended after a normal answer.
+  if (info.literalNl >= 10) {
+    const k = plain.indexOf('\\n');
+    let st = plain.lastIndexOf('\n', k); st = st < 0 ? 0 : st + 1;
+    const head = plain.slice(0, st).replace(/\s+$/, ''), tail = plain.slice(st);
+    const tailNl = (tail.match(/\\n/g) || []).length;
+    if (head.trim().length >= 1000 && tailNl >= 10 && tail.split('\n').length <= 3 + tailNl / 50) { info.how = 'cut-escaped-tail'; info.marker = st; return { answer: head, info }; }
+  }
+  return { answer: plain, info };
+}
+  return { AT_PROMPTS, AT_TOOL_NAMES, atPromptKey, atCleanPlainAnswer, atDecodeJsonString, AT_PREFIX, AT_TOOL_NAME, AT_MAX_ATTEMPTS, AT_CONTINUE_DEADLINE_MS, AT_MAX_RETRIES, AT_STOP_TEXT_MIN_CHARS, AT_EMPTY_RETRY_DELAY_MS, fixTrailingModelTurn, atIsEnabled, atRealModel, atInjectTools, atExtractAnswer, atBuildContinuationBody, atBlockInfo, atBlockMessage, atBlockPayload, atFinishPayload };
 })();
 
 // ===================================================================================
@@ -175,9 +258,10 @@ class AuthSource {
     this._preValidateAndFilter(); // 预检验并过滤掉格式错误的源
 
     if (this.availableIndices.length === 0) {
-      this.logger.warn(
-        `[Auth] 在 '${this.authMode}' 模式下未找到任何有效的认证源；服务将等待运行时上传认证文件。`,
+      this.logger.error(
+        `[Auth] 致命错误：在 '${this.authMode}' 模式下未找到任何有效的认证源。`,
       );
+      throw new Error("No valid authentication sources found.");
     }
   }
 
@@ -415,22 +499,18 @@ class BrowserManager {
     try {
       this.context = await this.browser.newContext({
         storageState: storageStateObject,
-        viewport: null,
+        viewport: { width: 1920, height: 1080 },
+        bypassCSP: true, // page CSP must not block the injected relay's ws://127.0.0.1 connection
       });
-      await this.context.addInitScript({ content: buildScriptContent });
-      if (process.env.WORKER_ACCOUNT) {
-        await require('./verified-client-route').install(
-          this.context, buildScriptContent,
-          record => this.logger.info('[VerifiedClientRoute] '+JSON.stringify(record))
-        );
-      }
+      // No Build App: the worker opens a plain AI Studio chat page and injects the relay client itself.
+      this.relayScript = buildScriptContent;
       this.page = await this.context.newPage();
       // ---- GenerateContent bridge: Google rejects POST via ProxyUnaryCall/ProxyStreamedCall; call MakerSuite GenerateContent directly ----
       {
         const GCB_INSTALL = `(function(){var M=window.default_MakerSuite;if(!M)return 'nom';if(!window.__gcS||window.__gcSm!==M){var S=null,sn='';for(var sk in M){var sf;try{sf=M[sk];}catch(e){continue;}if(typeof sf!=='function')continue;var ss;try{ss=String(sf);}catch(e){continue;}if(ss.length<400&&ss.indexOf('.snapshot(')>=0&&ss.indexOf('content:b}')>=0){S=sf;sn=sk;break;}}if(!S)return 'nosnap';window.__gcS=S;window.__gcSn=sn;window.__gcSm=M;}if(!window.__gcH||window.__gcHm!==M){var H=null,hn='';var hok=function(f){if(typeof f!=='function')return false;var hs;try{hs=String(f);}catch(e){return false;}return !/^\s*class\b/.test(hs)&&hs.length<300&&hs.indexOf('TextEncoder')>=0&&hs.indexOf('.digest()')>=0&&hs.indexOf('subtle')<0;};var hg;try{hg=M.GB;}catch(e){}if(hok(hg)){H=hg;hn='GB';}else{for(var hk in M){var hf;try{hf=M[hk];}catch(e){continue;}if(hok(hf)){H=hf;hn=hk;break;}}}if(!H)return 'nohash';window.__gcH=H;window.__gcHn=hn;window.__gcHm=M;}
-if(!window.__gmHook){window.__gmHook=1;var gc=0;for(var gk in M){var C;try{C=M[gk];}catch(e){continue;}if(typeof C!=='function'||!C.prototype)continue;var gd;try{gd=Object.getOwnPropertyDescriptor(C.prototype,'getMetadata');}catch(e){continue;}if(!gd||typeof gd.value!=='function')continue;var gs='';try{gs=String(gd.value);}catch(e){}if(gs.indexOf('AIzaSyBGb5fGAyC')<0)continue;(function(C,og,nm){C.prototype.getMetadata=function(){try{if(this&&window.__tb!==this){window.__tb=this;window.__tbVia=nm;}if(!window.__gmSeen&&this){var z=[];for(var q in this)z.push(q);window.__gmSeen=nm+':'+z.slice(0,20).join(',');}}catch(e){}return og.apply(this,arguments);};})(C,gd.value,gk);gc++;}window.__gmCnt=gc;}if(!window.__gcS.__gcb){var o=window.__gcS;var f=function(a,b){try{if(a&&typeof a==='object'){var ks=[];for(var q in a)ks.push(q);window.__cnSeen=ks.slice(0,40).join(',')+' gm='+(typeof a.getMetadata);}}catch(e){}if(a&&(a.mb||(a.A&&typeof a.A.snapshot==='function'&&typeof a.getMetadata==='function'))){window.__tb=a;window.__tbVia='Cn';}return o.apply(this,arguments)};f.__gcb=1;M[window.__gcSn]=f;window.__gcS=f;}
+if(!window.__gmHook){window.__gmHook=1;var gc=0;for(var gk in M){var C;try{C=M[gk];}catch(e){continue;}if(typeof C!=='function'||!C.prototype)continue;var gd;try{gd=Object.getOwnPropertyDescriptor(C.prototype,'getMetadata');}catch(e){continue;}if(!gd||typeof gd.value!=='function')continue;var gs='';try{gs=String(gd.value);}catch(e){}if(gs.indexOf('AIzaSyBGb5fGAyC')<0)continue;(function(C,og,nm){C.prototype.getMetadata=function(){try{if(this&&window.__tbHd!==this){window.__tbHd=this;window.__tbHdVia=nm;}if(!window.__gmSeen&&this){var z=[];for(var q in this)z.push(q);window.__gmSeen=nm+':'+z.slice(0,20).join(',');}}catch(e){}return og.apply(this,arguments);};})(C,gd.value,gk);gc++;}window.__gmCnt=gc;}if(!window.__gcS.__gcb){var o=window.__gcS;var f=function(a,b){try{if(a&&typeof a==='object'){var ks=[];for(var q in a)ks.push(q);window.__cnSeen=ks.slice(0,40).join(',')+' gm='+(typeof a.getMetadata);}}catch(e){}if(a&&(a.mb||(a.A&&typeof a.A.snapshot==='function'&&typeof a.getMetadata==='function'))){window.__tb=a;window.__tbVia='Cn';}return o.apply(this,arguments)};f.__gcb=1;M[window.__gcSn]=f;window.__gcS=f;}
 if(!window.__tb&&window.__gmHook){var vn=Date.now();if(!window.__gcVisAt||vn-window.__gcVisAt>30000){window.__gcVisAt=vn;try{var vd=document,vst='hidden';Object.defineProperty(vd,'visibilityState',{configurable:true,get:function(){return vst;}});Object.defineProperty(vd,'hidden',{configurable:true,get:function(){return vst==='hidden';}});vd.dispatchEvent(new Event('visibilitychange'));vst='visible';vd.dispatchEvent(new Event('visibilitychange'));delete vd.visibilityState;delete vd.hidden;window.__gcVisN=(window.__gcVisN||0)+1;}catch(e){window.__gcVisErr=String(e&&e.message||e).slice(0,80);}}}
-if(!window.__tb&&window.__gmHook){var mn=Date.now();if(!window.__gcMk0)window.__gcMk0=mn;if(mn-window.__gcMk0>30000&&!window.__gcMkBusy&&(!window.__gcMkAt||mn-window.__gcMkAt>60000)){window.__gcMkAt=mn;window.__gcMkBusy=1;window.__gcMkN=(window.__gcMkN||0)+1;(async function(){try{var MC=null,mcn='';for(var mk in M){var mc;try{mc=M[mk];}catch(e){continue;}if(typeof mc!=='function'||!mc.prototype||typeof mc.prototype.initialize!=='function')continue;var mdd;try{mdd=Object.getOwnPropertyDescriptor(mc.prototype,'getMetadata');}catch(e){continue;}if(!mdd||typeof mdd.value!=='function')continue;var mds=String(mdd.value);if(mds.indexOf('AIzaSyBGb5fGAyC')<0&&mds.indexOf('__tbVia')<0)continue;MC=mc;mcn=mk;break;}if(!MC){window.__gcMk='noclass';return;}var wz=null;var scs=document.querySelectorAll('script[type="application/json"]');for(var si2=0;si2<scs.length;si2++){var st=scs[si2].textContent||'';if(st.indexOf('UsvuEb')<0)continue;try{wz=JSON.parse(st);}catch(e){}break;}if(!wz){window.__gcMk='nowiz';return;}var EP=null;for(var ek in M){var ef;try{ef=M[ek];}catch(e){continue;}if(typeof ef!=='function')continue;var es='';try{es=String(ef);}catch(e){continue;}if(es.indexOf('("UsvuEb")')>=0&&es.indexOf('("WIu0Nc")')>=0){EP=es;break;}}var pn=function(m2,df){if(!EP)return df;var i=EP.indexOf(m2);if(i<0)return df;var j=EP.lastIndexOf('this.',i);if(j<0)return df;var x=EP.slice(j+5,EP.indexOf('=',j));return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(x)?x:df;};var nb={};nb[pn('("UsvuEb")','sa')]=true;nb[pn('("QrtxK")','Gl')]=Number(wz.QrtxK)||0;nb[pn('("WIu0Nc")','gN')]=String(wz.WIu0Nc||'');window.__gcMkNb=Object.keys(nb).join(',')+(EP?'':'(default)');var o=Object.create(MC.prototype);o.nb=nb;o.F=false;o.H=o.initialize();await Promise.race([o.H,new Promise(function(_,rj){setTimeout(function(){rj(new Error('init timeout'));},40000);})]);if(!window.__tb){window.__tb=o;window.__tbVia='mk:'+mcn;}window.__gcMk='ok';}catch(e){window.__gcMk='err:'+String(e&&e.message||e).slice(0,60);}finally{window.__gcMkBusy=0;}})();}}
+if(!window.__tb&&window.__gmHook){var mn=Date.now();if(!window.__gcMk0)window.__gcMk0=mn;if(window.__gcAllowMk&&mn-window.__gcMk0>30000&&!window.__gcMkBusy&&(!window.__gcMkAt||mn-window.__gcMkAt>60000)){window.__gcMkAt=mn;window.__gcMkBusy=1;window.__gcMkN=(window.__gcMkN||0)+1;(async function(){try{var MC=null,mcn='';for(var mk in M){var mc;try{mc=M[mk];}catch(e){continue;}if(typeof mc!=='function'||!mc.prototype||typeof mc.prototype.initialize!=='function')continue;var mdd;try{mdd=Object.getOwnPropertyDescriptor(mc.prototype,'getMetadata');}catch(e){continue;}if(!mdd||typeof mdd.value!=='function')continue;var mds=String(mdd.value);if(mds.indexOf('AIzaSyBGb5fGAyC')<0&&mds.indexOf('__tbVia')<0)continue;MC=mc;mcn=mk;break;}if(!MC){window.__gcMk='noclass';return;}var wz=null;var scs=document.querySelectorAll('script[type="application/json"]');for(var si2=0;si2<scs.length;si2++){var st=scs[si2].textContent||'';if(st.indexOf('UsvuEb')<0)continue;try{wz=JSON.parse(st);}catch(e){}break;}if(!wz){window.__gcMk='nowiz';return;}var EP=null;for(var ek in M){var ef;try{ef=M[ek];}catch(e){continue;}if(typeof ef!=='function')continue;var es='';try{es=String(ef);}catch(e){continue;}if(es.indexOf('("UsvuEb")')>=0&&es.indexOf('("WIu0Nc")')>=0){EP=es;break;}}var pn=function(m2,df){if(!EP)return df;var i=EP.indexOf(m2);if(i<0)return df;var j=EP.lastIndexOf('this.',i);if(j<0)return df;var x=EP.slice(j+5,EP.indexOf('=',j));return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(x)?x:df;};var nb={};nb[pn('("UsvuEb")','sa')]=true;nb[pn('("QrtxK")','Gl')]=Number(wz.QrtxK)||0;nb[pn('("WIu0Nc")','gN')]=String(wz.WIu0Nc||'');window.__gcMkNb=Object.keys(nb).join(',')+(EP?'':'(default)');var o=Object.create(MC.prototype);o.nb=nb;o.F=false;o.H=o.initialize();await Promise.race([o.H,new Promise(function(_,rj){setTimeout(function(){rj(new Error('init timeout'));},40000);})]);if(!window.__tb){window.__tb=o;window.__tbVia='mk:'+mcn;}window.__gcMk='ok';}catch(e){window.__gcMk='err:'+String(e&&e.message||e).slice(0,60);}finally{window.__gcMkBusy=0;}})();}}
 if(!window.__gcCall||window.__gcCall.v!==8){window.__gcCall=async function(body,ht,key,hx){hx=hx||{};var M=window.default_MakerSuite,tb=window.__tb;if(!tb)return JSON.stringify({s:503,t:'[14,"token service not ready"]'});
 var md=tb.getMetadata()||{};var waa=md['X-Goog-Api-Key'];if(!key){var srcs=[];for(var sk in tb){try{if(tb[sk]&&typeof tb[sk]==='object')srcs.push(tb[sk]);}catch(e){}}for(var si=0;si<srcs.length&&!key;si++){var mb=srcs[si];for(var k in mb){var v;try{v=mb[k];}catch(e){continue;}if(typeof v==='string'&&/^AIza[0-9A-Za-z_-]{30,}$/.test(v)&&v!==waa){key=v;break;}}}}
 if(!key)return JSON.stringify({s:503,t:'[14,"page api key not found"]'});
@@ -440,10 +520,10 @@ var hd={'content-type':'application/json+protobuf','x-user-agent':'grpc-web-java
 return JSON.stringify({s:r.status,t:tx,tier:tier||''});};window.__gcCall.v=8;window.__gcAbort=function(op){var c=window.__gcAb&&window.__gcAb[op];if(!c)return false;c.__cancel=true;c.abort();return true;};}
 return window.__tb?'ok':'wait';})()`;
         const pg = this.page, log = this.logger;
-        global.__gcbPage = pg; let gcbKey = null; const gcbHx = {}; const gcbWaa = 'AIzaSyBGb5fGAyC-pRcRU6MUHb__b_vKha71HRE'; const GCB_HARD_MS = Number(process.env.GCB_HARD_MS) || 660000; const gcbOps = new Map(); const gcbCancelled = new Set(); let gcbSeq = 0;
-        this.gcbCancel = rid => { gcbCancelled.add(rid); setTimeout(() => gcbCancelled.delete(rid), 120000).unref?.(); const op = gcbOps.get(rid); if (!op) return false; gcbOps.delete(rid); log.info('[GCBridge] client cancelled ' + rid + '; aborting upstream call ' + op); pg.evaluate(o => window.__gcAbort(o), op).catch(() => {}); return true; }; // Google itself cuts at ~600s
-        this.context.on('request', r => { try { if (!/alkalimakersuite-pa\.clients6\.google\.com\/\$rpc\/.*MakerSuiteService\//.test(r.url())) return; const k = r.headers()['x-goog-api-key']; if (k && k !== gcbWaa && /^AIza/.test(k)) gcbKey = k; const h = r.headers(); if (h['x-aistudio-g1-tier']) gcbHx.tier = h['x-aistudio-g1-tier']; if (h['x-goog-ext-519733851-bin']) gcbHx.ext = h['x-goog-ext-519733851-bin']; if (h['x-aistudio-visit-id']) gcbHx.visit = h['x-aistudio-visit-id']; } catch {} });
-        const gcbInstall = () => pg.evaluate(c => (0, eval)(c), GCB_INSTALL).catch(e => 'err:' + String(e && e.message || e).slice(0, 120)).then(r => { const v = typeof r === 'string' ? r : JSON.stringify(r); try { gcbAssess(v); } catch (e) {} pg.evaluate(() => { try { const w = window; return 'hash=' + (w.__gcHn || '-') + ' tb=' + (w.__tb ? 'yes' : 'no') + ' v=' + (w.__gcCall ? w.__gcCall.v : '-') + ' cn=' + (w.__cnSeen || '-') + ' gm=' + w.__gmCnt + ' via=' + (w.__tbVia || '-') + ' seen=' + (w.__gmSeen || '-') + ' snap=' + (w.__gcSn || '-') + ' vis=' + (w.__gcVisN || 0) + ' mk=' + (w.__gcMk || '-') + '/' + (w.__gcMkN || 0) + ' nb=' + (w.__gcMkNb || '-') } catch (e) { return 'probe err ' + e.message; } }).then(x => { const k = v + ' ' + x; if (k !== gcbLast) { gcbLast = k; log.warn('[GCBridge] install result=' + String(v).slice(0, 80) + ' ' + String(x).slice(0, 900)); } }).catch(() => {}); return r; }); let gcbLast = null;
+        global.__gcbPage = pg; let gcbKey = null; const gcbHx = {}; const gcbWaa = 'AIzaSyBGb5fGAyC-pRcRU6MUHb__b_vKha71HRE'; const GCB_MS_KEY = 'AIzaSyDdP816MREB3SkjZO04QXbjsigfcI0GWOs'; const GCB_HARD_MS = Number(process.env.GCB_HARD_MS) || 660000; const gcbOps = new Map(); const gcbCancelled = new Set(); let gcbSeq = 0;
+        this.gcbCancel = rid => { gcbCancelled.add(rid); setTimeout(() => gcbCancelled.delete(rid), 120000).unref?.(); const op = gcbOps.get(rid); if (!op) return false; gcbOps.delete(rid); log.info('[GCBridge] client cancelled ' + rid + '; aborting upstream call ' + op); pg.evaluate(o => window.wrappedJSObject.__gcAbort(o), op).catch(() => {}); return true; }; // Google itself cuts at ~600s
+        this.context.on('request', r => { try { if (!/alkalimakersuite-pa\.clients6\.google\.com\/\$rpc\/.*MakerSuiteService\//.test(r.url())) return; const k = r.headers()['x-goog-api-key']; if (k && k !== gcbWaa && /^AIza/.test(k) && k !== gcbKey) { log.info('[GCBridge] page key ' + (gcbKey ? gcbKey.slice(0, 8) : 'none') + ' -> ' + k.slice(0, 8) + ' via ' + r.url().split('/').pop().slice(0, 40)); gcbKey = k; } const h = r.headers(); if (h['x-aistudio-g1-tier']) gcbHx.tier = h['x-aistudio-g1-tier']; if (h['x-goog-ext-519733851-bin']) gcbHx.ext = h['x-goog-ext-519733851-bin']; if (h['x-aistudio-visit-id']) gcbHx.visit = h['x-aistudio-visit-id']; } catch {} });
+        const gcbInstall = () => pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_INSTALL).catch(e => 'err:' + String(e && e.message || e).slice(0, 120)).then(r => { const v = typeof r === 'string' ? r : JSON.stringify(r); try { gcbAssess(v); } catch (e) {} pg.evaluate(() => { try { const w = window.wrappedJSObject; return 'hash=' + (w.__gcHn || '-') + ' tb=' + (w.__tb ? 'yes' : 'no') + ' v=' + (w.__gcCall ? w.__gcCall.v : '-') + ' cn=' + (w.__cnSeen || '-') + ' gm=' + w.__gmCnt + ' via=' + (w.__tbVia || '-') + ' seen=' + (w.__gmSeen || '-') + ' snap=' + (w.__gcSn || '-') + ' vis=' + (w.__gcVisN || 0) + ' mk=' + (w.__gcMk || '-') + '/' + (w.__gcMkN || 0) + ' nb=' + (w.__gcMkNb || '-') } catch (e) { return 'probe err ' + e.message; } }).then(x => { const k = v + ' ' + x; if (k !== gcbLast) { gcbLast = k; log.warn('[GCBridge] install result=' + String(v).slice(0, 80) + ' ' + String(x).slice(0, 900)); } }).catch(() => {}); return r; }); let gcbLast = null;
         // ---- Signer self-check: readiness must include "can this page actually sign a request" ----
         const GCB_SIGN_MSG = { frontend_object_missing: '找不到 AI Studio 前端对象', hash_fn_missing: '没找到哈希函数', signer_missing: '没找到签名函数', token_service_missing: '没拿到签名服务（已尝试自唤醒）', sign_probe_failed: '本地试签失败', frontend_incompatible: '连续签名报错，前端可能不兼容', install_error: '签名模块安装出错' };
         const GCB_INSTALL_REASON = { nom: 'frontend_object_missing', nosnap: 'signer_missing', nohash: 'hash_fn_missing', wait: 'token_service_missing' };
@@ -461,7 +541,7 @@ return window.__tb?'ok':'wait';})()`;
         };
         const gcbProbe = () => {
           if (gcbProbing || pg.isClosed()) return; gcbProbing = true; gcbSig.probedAt = Date.now();
-          pg.evaluate(c => (0, eval)(c), GCB_PROBE).then(raw => {
+          pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_PROBE).then(raw => {
             let o; try { o = JSON.parse(raw); } catch (e) { o = { r: 'bad ' + String(raw).slice(0, 60) }; }
             gcbSig.names = { hash: o.hash || null, sign: o.sign || null, service: o.via || null };
             if (o.r === 'missing') { gcbSig.probe = null; return; }
@@ -480,6 +560,31 @@ return window.__tb?'ok':'wait';})()`;
           if (gcbSig.probe === 'ok') { if (gcbSig.state !== 'ok') gcbSet('ok'); return; }
           if (gcbSig.probe === 'failed' && now - gcbSig.probedAt < 30000) return;
           gcbProbe();
+        };
+        // Google MakerSuite errors are JSPB arrays like [,[7,"msg"]]; turn them into REST-style {error:{...}} for the page client
+        const GCB_RPC_STATUS = { 3: 'INVALID_ARGUMENT', 4: 'DEADLINE_EXCEEDED', 5: 'NOT_FOUND', 7: 'PERMISSION_DENIED', 8: 'RESOURCE_EXHAUSTED', 9: 'FAILED_PRECONDITION', 13: 'INTERNAL', 14: 'UNAVAILABLE', 16: 'UNAUTHENTICATED' };
+        const gcbErrBody = (status, text) => {
+          const t = String(text == null ? '' : text);
+          try { const j = JSON.parse(t); if (j && typeof j === 'object' && !Array.isArray(j) && j.error) return t;
+            if (Array.isArray(j)) { const e = Array.isArray(j[1]) ? j[1] : (typeof j[0] === 'number' ? j : null); if (e) return JSON.stringify({ error: { code: status, status: GCB_RPC_STATUS[e[0]] || 'UNKNOWN', message: String(e[1] || t).slice(0, 2000) } }); } } catch (e) {}
+          return JSON.stringify({ error: { code: status, status: 'UNKNOWN', message: t.slice(0, 2000) || ('HTTP ' + status) } });
+        };
+        // GET /v1beta/models from the page client -> MakerSuite ListModels (signed headers not needed; page auth + MakerSuite key)
+        this.gcbListModels = async route => {
+          const t0 = Date.now();
+          try {
+            await gcbInstall();
+            const raw = await pg.evaluate(c => window.wrappedJSObject.eval(c), `(async function(){var tb=window.__tb;var md=tb&&tb.getMetadata?tb.getMetadata():{};var h={'content-type':'application/json+protobuf','x-user-agent':'grpc-web-javascript/0.1','x-goog-api-key':${JSON.stringify(GCB_MS_KEY)}};if(md.Authorization)h.authorization=md.Authorization;if(md['X-Goog-AuthUser']!=null)h['x-goog-authuser']=String(md['X-Goog-AuthUser']);var r=await fetch('https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/ListModels',{method:'POST',credentials:'include',headers:h,body:'[]'});return JSON.stringify({s:r.status,t:await r.text()});})()`);
+            const r = JSON.parse(raw);
+            if (r.s !== 200) { log.warn('[GCBridge] ListModels status ' + r.s + ' ' + String(r.t).slice(0, 200)); return route.fulfill({ status: r.s, headers: GCB_CORS, contentType: 'application/json; charset=UTF-8', body: gcbErrBody(r.s, r.t) }); }
+            const d = JSON.parse(r.t); const items = Array.isArray(d) && Array.isArray(d[0]) ? d[0] : [];
+            const models = items.filter(it => Array.isArray(it) && typeof it[0] === 'string' && it[0].startsWith('models/')).map(it => { const m = { name: it[0], version: typeof it[2] === 'string' ? it[2] : '001', displayName: typeof it[3] === 'string' ? it[3] : it[0].slice(7), description: typeof it[4] === 'string' ? it[4] : '', inputTokenLimit: Number.isSafeInteger(it[5]) ? it[5] : 0, outputTokenLimit: Number.isSafeInteger(it[6]) ? it[6] : 0, supportedGenerationMethods: Array.isArray(it[7]) ? it[7].filter(x => typeof x === 'string') : [] }; if (typeof it[8] === 'number') m.temperature = it[8]; if (typeof it[9] === 'number') m.topP = it[9]; if (typeof it[10] === 'number') m.topK = it[10]; return m; });
+            log.info('[GCBridge] ListModels ok models=' + models.length + ' ms=' + (Date.now() - t0));
+            return route.fulfill({ status: 200, headers: GCB_CORS, contentType: 'application/json; charset=UTF-8', body: JSON.stringify({ models }) });
+          } catch (e) {
+            log.warn('[GCBridge] ListModels error ' + String(e && e.message || e).slice(0, 200));
+            return route.fulfill({ status: 502, headers: GCB_CORS, contentType: 'application/json; charset=UTF-8', body: JSON.stringify({ error: { code: 502, status: 'UNAVAILABLE', message: 'GCBridge ListModels: ' + String(e && e.message || e).slice(0, 300) } }) }).catch(() => {});
+          }
         };
         const gcbOutcome = (ok, text) => {
           if (ok) { gcbSig.okRequests++; gcbSig.failStreak = 0; gcbSig.lastOkAt = Date.now(); if (gcbSig.state === 'failed' && gcbSig.reason === 'frontend_incompatible') gcbSet('ok'); return; }
@@ -583,36 +688,41 @@ return window.__tb?'ok':'wait';})()`;
           const r = { candidates: [{ content: { parts, role: 'model' }, finishReason: fin || 'STOP', index: 0 }] };
           if (usage) r.usageMetadata = usage; if (rid) r.responseId = rid; return r;
         };
-        await this.context.route(/MakerSuiteService\/Proxy(Unary|Streamed)Call/, async route => {
-          const req = route.request(); let a = null;
-          try { a = JSON.parse(req.postData() || ''); } catch {}
-          const mm = Array.isArray(a) && typeof a[0] === 'string' && a[0].match(/models\/([^:/?]+):(stream)?generateContent/i);
-          if (!mm) return route.continue();
-          // Legacy path: models Google no longer serves via MakerSuite GenerateContent still answer through the page's original Proxy call
-          if ((process.env.GCB_LEGACY_MODELS || 'gemini-3.7-flash').split(',').map(x => x.trim()).filter(Boolean).some(x => mm[1] === x || mm[1].startsWith(x + '-'))) { log.info('[GCBridge] ' + mm[1] + ' legacy proxy path'); return route.continue(); }
-          const streamed = /ProxyStreamedCall/.test(req.url());
+        const GCB_CORS = { 'access-control-allow-origin': 'https://aistudio.google.com', 'access-control-allow-credentials': 'true', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-expose-headers': '*' };
+        this.gcbCors = GCB_CORS;
+        await this.context.route(/^https:\/\/generativelanguage\.googleapis\.com\//, async route => {
+          const req = route.request();
+          if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: GCB_CORS, body: '' });
+          const gu = new URL(req.url());
+          if (req.method() === 'GET' && /^\/v1beta\/models\/?$/.test(gu.pathname)) return this.gcbListModels(route);
+          const mm = gu.pathname.match(/^\/v1beta\/models\/([^:/?]+):(stream)?generateContent$/i);
+          if (!mm || req.method() !== 'POST') return route.fulfill({ status: 404, headers: GCB_CORS, contentType: 'application/json; charset=UTF-8', body: JSON.stringify({ error: { code: 404, status: 'NOT_FOUND', message: 'GCBridge: unsupported ' + req.method() + ' ' + gu.pathname } }) });
+          const a = [null, req.postData() || '{}'];
+          const streamed = !!mm[2];
           try {
             const g = JSON.parse(a[1] || '{}'); const gcbRid = typeof g.__aisRid === 'string' ? g.__aisRid : null; delete g.__aisRid;
             const { body, ht } = buildBody(mm[1], g);
             await gcbInstall();
             const gcbT0 = Date.now(); const gcbOp = 'g' + (++gcbSeq); if (gcbRid) { if (gcbCancelled.has(gcbRid)) { log.info('[GCBridge] ' + gcbRid + ' already cancelled; not calling upstream'); return route.abort().catch(() => {}); } gcbOps.set(gcbRid, gcbOp); }
             const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ',' + JSON.stringify(gcbKey) + ',' + JSON.stringify(Object.assign({}, gcbHx, { hardMs: GCB_HARD_MS, op: gcbOp })) + ')';
-            let gcbBk; const raw = await Promise.race([pg.evaluate(c => (0, eval)(c), code), new Promise(rs => { gcbBk = setTimeout(() => rs(JSON.stringify({ s: 504, t: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_NO_RESPONSE', message: '浏览器页面超过 ' + Math.round((GCB_HARD_MS + 30000) / 60000) + ' 分钟没有返回，已主动中止，请重试。' } }) })), GCB_HARD_MS + 30000); })]).finally(() => clearTimeout(gcbBk)); // backstop only: Google cuts at ~600s
-            if (gcbRid) gcbOps.delete(gcbRid); const r = JSON.parse(raw);
+            let gcbBk; const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise(rs => { gcbBk = setTimeout(() => rs(JSON.stringify({ s: 504, t: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_NO_RESPONSE', message: '浏览器页面超过 ' + Math.round((GCB_HARD_MS + 30000) / 60000) + ' 分钟没有返回，已主动中止，请重试。' } }) })), GCB_HARD_MS + 30000); })]).finally(() => clearTimeout(gcbBk)); // backstop only: Google cuts at ~600s
+            let r = JSON.parse(raw); // new_chat signatures are occasionally rejected with 403 'caller does not have permission' (~1 in 3, no quota used): re-sign and resend
+            for (let gcbTry = 1; gcbTry <= 2 && r.s === 403 && /caller does not have permission/i.test(String(r.t)) && !(gcbRid && gcbCancelled.has(gcbRid)); gcbTry++) { log.warn('[GCBridge] ' + mm[1] + ' signature rejected (403), re-signing and retrying ' + gcbTry + '/2'); await new Promise(x => setTimeout(x, 1500 * gcbTry)); await gcbInstall(); r = JSON.parse(await pg.evaluate(c => window.wrappedJSObject.eval(c), code)); if (r.s === 200) log.info('[GCBridge] ' + mm[1] + ' retry ' + gcbTry + ' accepted'); }
+            if (gcbRid) gcbOps.delete(gcbRid);
             if (r.s === 499) { log.info('[GCBridge] ' + mm[1] + ' upstream call ' + gcbOp + ' cancelled after ' + (Date.now() - gcbT0) + 'ms'); return route.abort().catch(() => {}); }
-            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' ' + String(r.t).slice(0, 300)); gcbOutcome(false, r.t); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
+            if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' key=' + (gcbKey ? gcbKey.slice(0, 8) : 'none') + ' hx=' + Object.keys(gcbHx).join('/') + ' ms=' + (Date.now() - gcbT0) + ' ' + String(r.t).slice(0, 300)); gcbOutcome(false, r.t); pg.evaluate(() => { const w = window.wrappedJSObject; return 'via=' + w.__tbVia + ' seen=' + w.__gmSeen + ' cn=' + String(w.__cnSeen || '').slice(0, 60); }).then(d => log.warn('[GCBridge] fail diag ' + d)).catch(() => {}); return route.fulfill({ status: r.s, headers: GCB_CORS, contentType: 'application/json; charset=UTF-8', body: gcbErrBody(r.s, r.t) }); }
             const arr0 = JSON.parse(r.t); const isChunk = x => Array.isArray(x) && Array.isArray(x[0]) && Array.isArray(x[0][0]) && Array.isArray(x[0][0][0]) && x[0][0][0][1] === 'model'; const arr = Array.isArray(arr0) && arr0.some(isChunk) ? arr0 : (Array.isArray(arr0) && Array.isArray(arr0[0]) ? arr0[0] : []);
             const chunks = arr.map(convChunk).filter(c => c && c.candidates && c.candidates.length);
             let out;
-            if (streamed) { const tail = arr.length && !isChunk(arr[arr.length - 1]) ? arr[arr.length - 1] : null; out = '[[' + chunks.map(c => JSON.stringify([JSON.stringify(c)])).concat(tail ? [JSON.stringify(tail)] : []).join(',') + ']]'; }
-            else out = JSON.stringify([JSON.stringify(merge(chunks))]);
+            if (streamed) { out = chunks.map(c => 'data: ' + JSON.stringify(c) + '\r\n\r\n').join(''); }
+            else out = JSON.stringify(merge(chunks));
             { const lf = (chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'; if (lf !== 'STOP') { try { const sh = v => v == null ? null : typeof v === 'string' ? 's' + v.length : Array.isArray(v) ? 'a' + JSON.stringify(v).length : typeof v; const raw = arr.filter(isChunk).map(m => (m[0] || []).map(c => [(Array.isArray(c && c[0] && c[0][0]) ? c[0][0] : []).map(p2 => Array.isArray(p2) ? p2.map((v, i) => v == null ? null : i + ':' + sh(v)).filter(Boolean).join('|') : sh(p2)).join(' ; '), 'cand=' + (Array.isArray(c) ? c.map((v, i) => v == null ? null : i + ':' + sh(v)).filter(Boolean).join('|') : sh(c))].join(' / ')).join(' || ')); log.warn('[GCBridge] shape ' + mm[1] + ' finish=' + lf + ' top=' + arr0.length + ' chunks=' + raw.length + ' :: ' + raw.slice(-3).join(' ## ').slice(0, 1500)); } catch (e) { log.warn('[GCBridge] shape failed ' + e.message); } } }
-            { const lc = chunks[chunks.length - 1]; if (chunks.length && !(lc.candidates[0] && lc.candidates[0].finishReason)) { let chars = 0; for (const c of chunks) for (const p of ((c.candidates[0] && c.candidates[0].content && c.candidates[0].content.parts) || [])) { if (typeof p.text === 'string' && !p.thought) chars += p.text.length; const fa = p.functionCall && p.functionCall.args; if (fa && typeof fa.answer === 'string') chars += fa.answer.length; } const sec = Math.round((Date.now() - gcbT0) / 1000); log.warn('[GCBridge] ' + mm[1] + ' upstream cut: no finishReason after ' + sec + 's chunks=' + chunks.length + ' bytes=' + String(r.t || '').length + ' chars=' + chars); return route.fulfill({ status: 504, contentType: 'application/json; charset=UTF-8', body: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_CUT', message: 'Google 在约 ' + Math.max(1, Math.round(sec / 60)) + ' 分钟时断开连接，回答未写完（已生成约 ' + chars + ' 字被丢弃）。请重试，或让回答短一些。' } }) }); } }
+            { const lc = chunks[chunks.length - 1]; if (chunks.length && !(lc.candidates[0] && lc.candidates[0].finishReason)) { let chars = 0; for (const c of chunks) for (const p of ((c.candidates[0] && c.candidates[0].content && c.candidates[0].content.parts) || [])) { if (typeof p.text === 'string' && !p.thought) chars += p.text.length; const fa = p.functionCall && p.functionCall.args; if (fa && typeof fa.answer === 'string') chars += fa.answer.length; } const sec = Math.round((Date.now() - gcbT0) / 1000); log.warn('[GCBridge] ' + mm[1] + ' upstream cut: no finishReason after ' + sec + 's chunks=' + chunks.length + ' bytes=' + String(r.t || '').length + ' chars=' + chars); return route.fulfill({ status: 504, headers: GCB_CORS, contentType: 'application/json; charset=UTF-8', body: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_CUT', message: 'Google 在约 ' + Math.max(1, Math.round(sec / 60)) + ' 分钟时断开连接，回答未写完（已生成约 ' + chars + ' 字被丢弃）。请重试，或让回答短一些。' } }) }); } }
             gcbOutcome(true); log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' bytes=' + String(r.t || '').length + ' finish=' + ((chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'));
-            return route.fulfill({ status: 200, contentType: 'application/json+protobuf; charset=UTF-8', body: out });
+            return route.fulfill({ status: 200, headers: GCB_CORS, contentType: streamed ? 'text/event-stream; charset=UTF-8' : 'application/json; charset=UTF-8', body: out });
           } catch (e) {
             log.warn('[GCBridge] error ' + e.message); gcbOutcome(false, e.message);
-            return route.fulfill({ status: 500, contentType: 'application/json+protobuf; charset=UTF-8', body: JSON.stringify([13, 'GCBridge: ' + e.message]) });
+            return route.fulfill({ status: 500, headers: GCB_CORS, contentType: 'application/json; charset=UTF-8', body: JSON.stringify({ error: { code: 500, status: 'INTERNAL', message: 'GCBridge: ' + e.message } }) });
           }
         });
       }
@@ -651,7 +761,7 @@ return window.__tb?'ok':'wait';})()`;
           const newUrl = frame.url();
           if (
             newUrl !== "about:blank" &&
-            !newUrl.includes(this.config.targetUrl)
+            !newUrl.startsWith(this.config.pageUrl.split('?')[0])
           ) {
             this.logger.warn(
               `⚠️ [Browser] 页面发生了意外导航/刷新！新 URL: ${newUrl}`,
@@ -675,7 +785,7 @@ return window.__tb?'ok':'wait';})()`;
       });
 
       this.logger.info(`[Browser] 正在导航至目标网页...`);
-      const targetUrl = this.config.targetUrl;
+      const targetUrl = this.config.pageUrl;
       await this.page.goto(targetUrl, {
         timeout: 180000,
         waitUntil: "domcontentloaded",
@@ -801,46 +911,6 @@ return window.__tb?'ok':'wait';})()`;
           } catch (e) {}
         }
 
-        if (!popupStatus.continueBtn) {
-          try {
-            const clicked = await this.page.evaluate(() => {
-              const btns = Array.from(document.querySelectorAll("button"));
-              const target = btns.find(
-                (b) =>
-                  b.innerText && b.innerText.includes("Continue to the app"),
-              );
-              if (target) {
-                target.click();
-                return true;
-              }
-              return false;
-            });
-
-            if (clicked) {
-              this.logger.info(
-                `[Browser] ✅ (4/4) 原生JS成功点击 "Continue to the app"`,
-              );
-              popupStatus.continueBtn = true;
-              clickedInThisLoop = true;
-              this.logger.info(
-                `[Browser] ⚡ 已确认进入应用，提前终止弹窗等待循环。`,
-              );
-              break;
-            }
-          } catch (e) {}
-        }
-        try {
-          const isAppRunning = await this.page.evaluate(() => {
-            // 只要页面里出现了 ProxyClient 的输出，就说明代码已经跑起来了
-            return document.body.innerText.includes("[ProxyClient]");
-          });
-          if (isAppRunning) {
-            this.logger.info(
-              `[Browser] ⚡ 检测到内部环境已就绪，跳出弹窗等待。`,
-            );
-            break;
-          }
-        } catch (e) {}
 
         // 如果本轮点击了按钮，稍微等一下动画；如果没点，等待1秒避免死循环空转
         await this.page.waitForTimeout(clickedInThisLoop ? 500 : 1000);
@@ -856,35 +926,13 @@ return window.__tb?'ok':'wait';})()`;
       );
 
       this.currentAuthIndex = authIndex;
-      this._startBackgroundWakeup();
-      this.logger.info("[Browser] (后台任务) 🛡️ 监控进程已启动...");
-      await this.page.waitForTimeout(1000);
-      this.logger.info(
-        "[Browser] ⚡ 正在发送主动唤醒请求以触发 Launch 流程...",
-      );
-      try {
-        await this.page.evaluate(async () => {
-          try {
-            await fetch(
-              "https://generativelanguage.googleapis.com/v1beta/models?key=ActiveTrigger",
-              {
-                method: "GET",
-                headers: { "Content-Type": "application/json" },
-              },
-            );
-          } catch (e) {
-            console.log(
-              "[ProxyClient] 主动唤醒请求已发送 (预期内可能会失败，这很正常)",
-            );
-          }
-        });
-        this.logger.info("[Browser] ⚡ 主动唤醒请求已发送。");
-      } catch (e) {
-        this.logger.warn(
-          `[Browser] 主动唤醒请求发送异常 (不影响主流程): ${e.message}`,
-        );
-      }
-
+      await this._gcbBootstrap();
+      await this._injectRelay();
+      { const pgRef = this.page; let busy = false;
+        pgRef.on('load', async () => { if (busy || pgRef !== this.page || pgRef.isClosed()) return; busy = true;
+          try { this.logger.warn('[Browser] page reloaded (' + pgRef.url().slice(0, 80) + '); re-warming signer and re-injecting relay'); await this._gcbBootstrap(); await this._injectRelay(); }
+          catch (e) { this.logger.error('[Browser] re-inject after reload failed: ' + String(e && e.message || e).slice(0, 160)); }
+          finally { busy = false; } }); }
       this.logger.info("==================================================");
       this.logger.info(`✅ [Browser] 账号 ${authIndex} 的上下文初始化成功！`);
       this.logger.info("✅ [Browser] 浏览器客户端已准备就绪。");
@@ -922,6 +970,50 @@ return window.__tb?'ok':'wait';})()`;
     );
   }
 
+  // Make the page warm up its own anti-abuse token service: type a tiny prompt and send it,
+  // but abort that GenerateContent before it leaves the browser (no quota used).
+  async _gcbBootstrap() {
+    const pg = this.page, log = this.logger; const t0 = Date.now();
+    let caught = false;
+    const pat = /MakerSuiteService\/GenerateContent/;
+    const handler = async route => { if (!caught) { caught = true; } return route.abort().catch(() => {}); };
+    try {
+      await pg.route(pat, handler);
+      for (let k = 0; k < 3 && !caught; k++) {
+        try {
+          const box = (await pg.locator('textarea').count().catch(() => 0)) ? pg.locator('textarea').first() : pg.locator('[contenteditable="true"], [contenteditable="plaintext-only"]').first();
+          await box.waitFor({ timeout: 30000 });
+          await pg.evaluate(() => { for (const e of document.querySelectorAll('[contenteditable="plaintext-only"]')) e.setAttribute('contenteditable', 'true'); });
+          await box.click({ timeout: 5000 }).catch(() => {});
+          await box.fill("say '1'").catch(async () => { await pg.keyboard.type("say '1'"); });
+          await pg.waitForTimeout(800);
+          await pg.evaluate(() => { for (const d of document.querySelectorAll('mat-dialog-container, cdk-dialog-container, ms-g1-welcome-dialog, [role=dialog]')) { for (const cb of d.querySelectorAll('input[type=checkbox]:not(:checked)')) cb.click(); const b = [...d.querySelectorAll('button')].find(x => /accept|agree|got it|continue|dismiss|close|同意|继续|知道了|关闭/i.test(x.innerText || x.getAttribute('aria-label') || '')); if (b) b.click(); } }).catch(() => {});
+          const runBtn = pg.getByRole('button', { name: /Run|运行/ }).first();
+          const st = await pg.evaluate(() => { const b = [...document.querySelectorAll('button')].find(x => /Run|运行/.test(x.innerText || x.getAttribute('aria-label') || '')); const t = document.querySelector('textarea'); return { run: !!b, dis: b ? (b.getAttribute('aria-disabled') || String(b.disabled)) : '-', len: t ? t.value.length : -1 }; }).catch(() => ({}));
+          log.info('[GCBridge] bootstrap attempt ' + (k + 1) + ' run=' + st.run + ' disabled=' + st.dis + ' textLen=' + st.len);
+          let clicked = false;
+          if (await runBtn.count().catch(() => 0)) { try { await runBtn.click({ timeout: 8000 }); clicked = true; } catch (e) { log.warn('[GCBridge] bootstrap run click failed: ' + String(e && e.message || e).replace(/\s+/g, ' ').slice(0, 600)); } }
+          if (!clicked) { const r = await pg.evaluate(() => { const bs = [...document.querySelectorAll('button')].filter(x => /^\s*(Run|运行)/.test(x.innerText || '') && x.getAttribute('aria-disabled') !== 'true' && !x.disabled); const b = bs.find(x => x.classList.contains('ms-button-primary')) || bs[0]; if (!b) return 'none'; b.scrollIntoView({ block: 'center' }); b.click(); return 'dom:' + bs.length + ':' + (b.className || '').slice(0, 60); }).catch(e => 'err:' + String(e && e.message || e).slice(0, 80)); log.info('[GCBridge] bootstrap run dom-click ' + r); if (/^dom/.test(r)) clicked = true; }
+          if (!clicked) await pg.keyboard.press('Control+Enter');
+        } catch (e) { log.warn('[GCBridge] bootstrap input attempt ' + (k + 1) + ' failed: ' + String(e && e.message || e).slice(0, 120)); }
+        for (let j = 0; j < 20 && !caught; j++) await pg.waitForTimeout(500);
+        if (!caught) { await pg.getByRole('button', { name: /^(Run|运行)/ }).first().click({ timeout: 5000 }).catch(() => {}); for (let j = 0; j < 20 && !caught; j++) await pg.waitForTimeout(500); }
+      }
+    } finally { await pg.unroute(pat, handler).catch(() => {}); }
+    if (!caught) { try { await pg.screenshot({ path: '/tmp/gcb-boot.png' }).catch(() => {}); const d = await pg.evaluate(() => { const t = []; for (const e of document.querySelectorAll('button, [role=dialog], textarea, [contenteditable]')) { const x = (e.getAttribute('aria-label') || e.innerText || e.tagName).trim().replace(/\s+/g, ' ').slice(0, 40); if (x) t.push(e.tagName[0] + ':' + x); } return location.pathname + ' | ' + t.slice(0, 40).join(' ; '); }); log.warn('[GCBridge] bootstrap page dump ' + String(d).slice(0, 1500)); } catch (e) {} }
+    // clear the prompt box so a page reload/autosave does not keep the text
+    await pg.evaluate(() => { const e = document.querySelector('textarea, [contenteditable="true"]'); if (e) { if ('value' in e) e.value = ''; else e.textContent = ''; e.dispatchEvent(new Event('input', { bubbles: true })); } }).catch(() => {});
+    log.info('[GCBridge] bootstrap ' + (caught ? 'ok (page request intercepted, not sent)' : 'no page request seen') + ' ms=' + (Date.now() - t0));
+    return caught;
+  }
+  // Inject the relay client (black-browser.js) into the page; it connects back over ws://127.0.0.1:<wsPort>.
+  async _injectRelay() {
+    const pg = this.page, log = this.logger;
+    if (!this.relayScript) throw new Error('relay client script missing');
+    const code = this.relayScript.replace('ws://127.0.0.1:9998', 'ws://127.0.0.1:' + this.config.wsPort);
+    const mark = await pg.evaluate(c => { const w = window.wrappedJSObject; if (w.__aisRelay) return 'already'; w.__aisRelay = 1; w.eval(c); return 'injected'; }, code);
+    log.info('[Browser] relay client ' + mark);
+  }
   async _startBackgroundWakeup() {
     if (this.isWakeupRunning && this.wakeupPage === this.page) {
       this.logger.warn(
@@ -1661,53 +1753,6 @@ class RequestHandler {
     if (this.browserManager) {
       this.browserManager.notifyUserActivity();
     }
-
-    if (!this.connectionRegistry.hasActiveConnections()) {
-      if (this.isSystemBusy) {
-        this.logger.warn(
-          "[System] 检测到连接断开，但系统正在进行切换/恢复，拒绝新请求。",
-        );
-        return this._sendErrorResponse(
-          res,
-          503,
-          "服务器正在进行内部维护（账号切换/恢复），请稍后重试。",
-        );
-      }
-
-      this.logger.error(
-        "❌ [System] 检测到浏览器WebSocket连接已断开！可能是进程崩溃。正在尝试恢复...",
-      );
-      this.isSystemBusy = true;
-      try {
-        await this.browserManager.launchOrSwitchContext(this.currentAuthIndex);
-        this.logger.info(`[System] 浏览器页面已加载，等待 WebSocket 握手...`);
-        let wsReady = false;
-        for (let i = 0; i < 20; i++) {
-          if (this.connectionRegistry.hasActiveConnections()) {
-            wsReady = true;
-            break;
-          }
-          await new Promise((r) => setTimeout(r, 500));
-        }
-
-        if (!wsReady) {
-          throw new Error(
-            "浏览器已启动，但前端 WebSocket 始终未能连接到代理端。",
-          );
-        }
-        this.logger.info(`✅ [System] 浏览器与 WebSocket 已完全恢复就绪！`);
-      } catch (error) {
-        this.logger.error(`❌ [System] 浏览器自动恢复失败: ${error.message}`);
-        return this._sendErrorResponse(
-          res,
-          503,
-          "服务暂时不可用：后端浏览器实例崩溃且无法自动恢复，请联系管理员。",
-        );
-      } finally {
-        this.isSystemBusy = false;
-      }
-    }
-
     const requestId = this._generateRequestId();
     const atRequestStartedAt = Date.now();
     const isOpenAIStream = req.body.stream === true;
@@ -1735,8 +1780,9 @@ class RequestHandler {
     if (atEnabled) {
       const atReal = AT.atRealModel(model);
       proxyRequestModel = atReal;
-      AT.atInjectTools(googleBody);
-      this.logger.info("[AT] anti-truncation enabled for " + atReal + ", tools injected");
+      const atPrompt = AT.atPromptKey(req.headers && req.headers['x-at-prompt']);
+      AT.atInjectTools(googleBody, atPrompt);
+      this.logger.info("[AT] anti-truncation enabled for " + atReal + ", tools injected, prompt=" + atPrompt);
     }
     } catch (error) {
       this.logger.error(`[Adapter] OpenAI请求翻译失败: ${error.message}`);
@@ -1808,11 +1854,13 @@ class RequestHandler {
         if (useRealStream) {
           this.logger.info(`[Adapter] OpenAI 流式响应 (Real Mode) 已启动...`);
           let lastGoogleChunk = "";
+          let sseBuf = ""; const sseEmit = (ev) => { const tc = this._translateGoogleToOpenAIStream(ev, model, streamState); if (tc) res.write(tc); }; // SSE events may be batched or split across relay chunks
           const streamState = { inThought: false };
 
           while (true) {
             const message = await messageQueue.dequeue(); // 5分钟超时
             if (message.type === "STREAM_END") {
+              if (sseBuf.trim()) sseEmit(sseBuf); sseBuf = "";
               if (streamState.inThought) {
                 const closeThoughtPayload = {
                   id: `chatcmpl-${requestId}`,
@@ -1833,15 +1881,9 @@ class RequestHandler {
               break;
             }
             if (message.data) {
-              // [修改] 将 streamState 传递给翻译函数
-              const translatedChunk = this._translateGoogleToOpenAIStream(
-                message.data,
-                model,
-                streamState,
-              );
-              if (translatedChunk) {
-                res.write(translatedChunk);
-              }
+              sseBuf += message.data;
+              const evs = sseBuf.split(/\r?\n\r?\n/); sseBuf = evs.pop();
+              for (const ev of evs) if (ev.trim()) sseEmit(ev);
               lastGoogleChunk = message.data;
             }
           }
@@ -2070,8 +2112,7 @@ class RequestHandler {
     if (limit) cfg.maxOutputTokens = limit; else delete cfg.maxOutputTokens;
     if (before !== cfg.maxOutputTokens) this.logger.info('[MaxTokens] ' + mm[1] + ' client=' + (before ?? '-') + ' -> ' + (limit ?? 'default'));
     // internal: lets a client cancel abort the upstream call; stripped in-page before Google. Legacy models go through the page's own Proxy call (already aborted by cancel), so they are left untouched.
-    const gcbLegacy = (process.env.GCB_LEGACY_MODELS || 'gemini-3.7-flash').split(',').map(x => x.trim()).filter(Boolean).some(x => mm[1] === x || mm[1].startsWith(x + '-'));
-    if (!gcbLegacy && typeof proxyRequest.request_id === 'string') body.__aisRid = proxyRequest.request_id;
+    if (typeof proxyRequest.request_id === 'string') body.__aisRid = proxyRequest.request_id;
     proxyRequest.body = JSON.stringify(body);
   }
   _forwardRequest(proxyRequest) {
@@ -2415,6 +2456,7 @@ class RequestHandler {
     let lastAnswer = null;
     const atUsage = {complete: true, sum: {}};
     let atRetries = 0;
+    let atEmptyRetry = false;
     const atAddUsage = (resp) => { const u = resp && resp.usageMetadata; if (!u || typeof u !== 'object') { atUsage.complete = false; return; } for (const key of ['promptTokenCount','candidatesTokenCount','thoughtsTokenCount','cachedContentTokenCount','totalTokenCount']) { if (Number.isSafeInteger(u[key]) && u[key] >= 0) atUsage.sum[key] = (atUsage.sum[key] || 0) + u[key]; } };
     atAddUsage(current);
     // Diagnostics only: shape and size of each round, never the content itself.
@@ -2452,8 +2494,29 @@ class RequestHandler {
       }
       const atElapsed = Date.now() - startedAt;
       const atPartial = (() => { const c0 = current && current.candidates && current.candidates[0]; let t = ''; for (const p of ((c0 && c0.content && c0.content.parts) || [])) if (p && typeof p.text === 'string' && !p.thought) t += p.text; const a = typeof r.answer === 'string' ? r.answer : ''; return a.length >= t.length ? a : t; })();
-      if (attempt > AT.AT_MAX_ATTEMPTS) break;
-      let atRetryNow = false;
+      {
+        const c0 = current && current.candidates && current.candidates[0];
+        const ps = (c0 && c0.content && Array.isArray(c0.content.parts)) ? c0.content.parts : [];
+        const hasCall = ps.some(p => p && p.functionCall);
+        let plain = ''; for (const p of ps) if (p && typeof p.text === 'string' && !p.thought) plain += p.text;
+        // Finished normally with a full plain-text answer but skipped emit_answer: that text is the answer.
+        if (!r.found && r.finishReason === 'STOP' && !hasCall && plain.trim().length >= AT.AT_STOP_TEXT_MIN_CHARS) {
+          const cl = AT.atCleanPlainAnswer(plain);
+          const out = { found: true, answer: cl.answer, finishReason: 'STOP' };
+          if (atUsage.complete && Number.isSafeInteger(atUsage.sum.promptTokenCount)) out.usageMetadata = atUsage.sum;
+          this.logger.info('[AT] finish=STOP without emit_answer; accepting plain text as answer on attempt ' + attempt + ', len=' + plain.length + ' -> ' + cl.answer.length + ' ' + JSON.stringify(cl.info));
+          return out;
+        }
+        // Empty response (no parts, no finish reason): wait, then resend the original request (shares the retry budget).
+        if (!r.found && !r.finishReason && ps.length === 0 && !(current && current.promptFeedback && current.promptFeedback.blockReason) && atElapsed < AT.AT_CONTINUE_DEADLINE_MS && atRetries < AT.AT_MAX_RETRIES) {
+          atRetries++;
+          this.logger.warn('[AT] empty upstream response on round ' + attempt + ' elapsed=' + atElapsed + 'ms; waiting ' + AT.AT_EMPTY_RETRY_DELAY_MS + 'ms then retrying original request ' + atRetries + '/' + AT.AT_MAX_RETRIES);
+          await new Promise(rs => setTimeout(rs, AT.AT_EMPTY_RETRY_DELAY_MS));
+          atEmptyRetry = true;
+        }
+      }
+      if (attempt > AT.AT_MAX_ATTEMPTS && !atEmptyRetry) break;
+      let atRetryNow = atEmptyRetry; atEmptyRetry = false;
       if (r.finishReason && !/^(STOP|MAX_TOKENS|MALFORMED_FUNCTION_CALL)$/.test(r.finishReason)) {
         this.logger.warn('[AT] giving up: finish=' + r.finishReason + ' on round ' + attempt);
         const atBlock = AT.atBlockInfo(current);
@@ -2955,7 +3018,7 @@ class ProxyServerSystem extends EventEmitter {
       immediateSwitchStatusCodes: [429, 503],
       // [新增] 用于追踪API密钥来源
       apiKeySource: "未设置",
-      targetUrl: "https://aistudio.google.com/prompts/new_chat",
+      targetUrl: "",
     };
 
     const configPath = path.join(__dirname, "config.json");
@@ -2972,7 +3035,8 @@ class ProxyServerSystem extends EventEmitter {
     if (process.env.PORT)
       config.httpPort = parseInt(process.env.PORT, 10) || config.httpPort;
     if (process.env.HOST) config.host = process.env.HOST;
-    if (process.env.TARGET_URL) config.targetUrl = process.env.TARGET_URL;
+    if (process.env.TARGET_URL) config.targetUrl = process.env.TARGET_URL; // kept for the optional Build chat channel; the worker page no longer uses it
+    config.pageUrl = process.env.AISTUDIO_PAGE_URL || 'https://aistudio.google.com/prompts/new_chat';
     if (process.env.STREAMING_MODE)
       config.streamingMode = process.env.STREAMING_MODE;
     if (process.env.FAILURE_THRESHOLD)
@@ -3095,9 +3159,7 @@ class ProxyServerSystem extends EventEmitter {
     const allAvailableIndices = this.authSource.availableIndices;
 
     if (allAvailableIndices.length === 0) {
-      this.logger.warn("[System] 没有可用的认证源；服务正在等待通过管理界面上传认证文件。");
-      this.emit("started");
-      return;
+      throw new Error("没有任何可用的认证源，无法启动。");
     }
 
     // 2. <<<--- 创建一个优先尝试的启动顺序列表 --->>>
